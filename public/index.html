@@ -743,16 +743,15 @@ function showToast(msg){
 
 /* ================= AI HELPER ================= */
 async function callClaude(systemPrompt, userPrompt){
-  // 프론트엔드는 API 키를 절대 갖지 않는다. 우리 서버(server.js)의 /api/ai로만 요청한다.
+  // 프론트엔드는 API 키를 절대 갖지 않는다. 우리 서버(server.js)의 /api/ai로만 요청하며, 로그인 토큰을 함께 보낸다.
   let response;
   try{
-    response = await fetch("/api/ai", {
+    response = await authFetch("/api/ai", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ system: systemPrompt, prompt: userPrompt })
     });
   }catch(networkErr){
-    throw new Error('서버에 연결할 수 없어요. 인터넷 연결을 확인해주세요.');
+    throw new Error(networkErr.message || '서버에 연결할 수 없어요. 인터넷 연결을 확인해주세요.');
   }
   if(!response.ok){
     const err = await response.json().catch(()=>({error:'서버 오류 (' + response.status + ')'}));
