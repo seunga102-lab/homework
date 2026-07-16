@@ -232,6 +232,14 @@
     <label class="field-label">비밀번호</label>
     <input type="password" id="auth-password" placeholder="4자 이상" autocomplete="current-password">
 
+    <div id="auth-teacher-row" style="display:none; margin-top:12px;">
+      <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; color:var(--ink-soft); cursor:pointer;">
+        <input type="checkbox" id="auth-is-teacher" onchange="toggleTeacherCodeField()" style="width:16px; height:16px;">
+        선생님으로 가입할게요
+      </label>
+      <input type="text" id="auth-teacher-code" placeholder="선생님 코드를 입력하세요" style="display:none; margin-top:8px;">
+    </div>
+
     <div id="auth-error" class="banner" style="display:none; margin-top:14px;"></div>
 
     <button class="btn btn-primary" id="auth-submit-btn" style="margin-top:18px;" onclick="submitAuth()">로그인</button>
@@ -456,7 +464,7 @@
       <button class="play-btn" onclick="playPatternSentence()">▶</button>
 
       <button class="record-btn" id="pattern-record-btn" onclick="togglePatternRecording()">🎙</button>
-      <div class="rec-label" id="pattern-rec-label">버튼을 눌러 따라 말해보세요 (선택)</div>
+      <div class="rec-label" id="pattern-rec-label">🎙 먼저 따라 말해보세요 (필수)</div>
 
       <div id="pattern-score-grid" class="score-grid" style="display:none;">
         <div class="gauge-card"><div class="gauge-num" id="pattern-score-accuracy">-</div><div class="gauge-label">정확도</div></div>
@@ -466,7 +474,10 @@
       </div>
       <div id="pattern-mic-diff" style="text-align:center; font-size:16px; line-height:1.8; margin:12px 0;"></div>
 
-      <button class="btn btn-primary" style="margin-top:14px;" onclick="nextPatternStep()" id="pattern-next-btn">다음으로</button>
+      <input type="text" id="pattern-manual-input" style="display:none; margin-top:10px;" placeholder="들은 문장을 그대로 입력해보세요">
+      <button class="btn btn-secondary" id="pattern-manual-submit" style="display:none; margin-top:10px;" onclick="scorePatternManual()">확인</button>
+
+      <button class="btn btn-primary" style="margin-top:14px;" onclick="nextPatternStep()" id="pattern-next-btn" disabled>다음으로</button>
     </div>
 
     <div id="pattern-step-5" style="display:none;">
@@ -599,6 +610,30 @@
     <button class="btn btn-secondary" onclick="logout()">로그아웃</button>
   </div>
 
+  <!-- ============ TEACHER DASHBOARD ============ -->
+  <div class="screen" id="screen-teacher-dashboard">
+    <div class="topbar">
+      <div class="logo">
+        <span class="wave"><span style="height:6px"></span><span style="height:14px"></span><span style="height:9px"></span><span style="height:17px"></span></span>
+        Talk Pro <span style="font-weight:600; font-size:13px; color:var(--ink-soft); margin-left:4px;">선생님</span>
+      </div>
+      <div class="pill" style="cursor:pointer;" onclick="logout()">🚪 로그아웃</div>
+    </div>
+
+    <div style="padding:0 20px;">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:700; font-size:14px;">전체 학생</span>
+          <span id="teacher-student-count" style="font-size:13px; color:var(--ink-soft); font-weight:600;">0명</span>
+        </div>
+      </div>
+
+      <div class="section-label">학생 목록</div>
+      <div id="teacher-loading" class="loading-dots"><span></span><span></span><span></span></div>
+      <div id="teacher-student-list"></div>
+    </div>
+  </div>
+
   <div class="bottom-nav" style="display:none;">
     <button class="nav-item active" data-nav="home" onclick="go('home')"><span class="nav-icon">🏠</span>홈</button>
     <button class="nav-item" data-nav="study" onclick="go('study')"><span class="nav-icon">🗣️</span>학습</button>
@@ -612,7 +647,9 @@
 <script>
 /* ================= AUTH & STATE ================= */
 let authToken = null;
-let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, diary:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3, dayCount:1, username:'' };
+// 학생용 일반 링크에는 선생님 가입 옵션이 안 보이고, ?teacher=1 이 붙은 특별한 링크에서만 보인다.
+const showTeacherOption = new URLSearchParams(window.location.search).get('teacher') === '1';
+let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, diary:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3, dayCount:1, username:'', role:'student' };
 let authMode = 'login';
 
 function switchAuthTab(mode){
@@ -623,6 +660,16 @@ function switchAuthTab(mode){
   document.getElementById('auth-tab-signup').style.color = mode==='signup' ? '#fff' : 'var(--ink)';
   document.getElementById('auth-submit-btn').textContent = mode==='login' ? '로그인' : '회원가입';
   document.getElementById('auth-error').style.display = 'none';
+  document.getElementById('auth-teacher-row').style.display = (mode==='signup' && showTeacherOption) ? 'block' : 'none';
+  if(mode==='login'){
+    document.getElementById('auth-is-teacher').checked = false;
+    document.getElementById('auth-teacher-code').style.display = 'none';
+    document.getElementById('auth-teacher-code').value = '';
+  }
+}
+function toggleTeacherCodeField(){
+  const checked = document.getElementById('auth-is-teacher').checked;
+  document.getElementById('auth-teacher-code').style.display = checked ? 'block' : 'none';
 }
 
 async function submitAuth(){
@@ -642,10 +689,14 @@ async function submitAuth(){
 
   try{
     const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+    const body = { username, password };
+    if(authMode === 'signup' && document.getElementById('auth-is-teacher').checked){
+      body.teacherCode = document.getElementById('auth-teacher-code').value.trim();
+    }
     const res = await fetch(endpoint, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
     if(!res.ok){
@@ -665,6 +716,7 @@ async function submitAuth(){
 
 function applyUserState(user){
   state.username = user.username || '';
+  state.role = user.role || 'student';
   state.level = user.level;
   state.levelChosen = user.levelChosen;
   state.xp = user.xp;
@@ -676,6 +728,10 @@ function applyUserState(user){
 }
 
 function goPostAuth(){
+  if(state.role === 'teacher'){
+    openTeacherDashboard();
+    return;
+  }
   if(!state.levelChosen){
     renderLevelSelectScreen();
     go('level-select');
@@ -864,7 +920,7 @@ function go(screen){
   const navMap = {home:'home', study:'study', shadowing:'study', dictation:'study', pattern:'study', diary:'study', report:'report', mypage:'me'};
   const navEl = document.querySelector('[data-nav="'+(navMap[screen]||'home')+'"]');
   if(navEl) navEl.classList.add('active');
-  document.querySelector('.bottom-nav').style.display = (screen==='login' || screen==='level-select') ? 'none' : 'flex';
+  document.querySelector('.bottom-nav').style.display = (screen==='login' || screen==='level-select' || screen==='teacher-dashboard') ? 'none' : 'flex';
   window.scrollTo(0,0);
 
   if(screen==='shadowing'){
@@ -912,6 +968,55 @@ function renderMyPage(){
   document.getElementById('mypage-level').textContent = currentLevelData().name + ' (' + currentLevelData().cefr + ')';
   renderLevelSelector();
 }
+
+/* ================= TEACHER DASHBOARD ================= */
+async function openTeacherDashboard(){
+  go('teacher-dashboard');
+  document.getElementById('teacher-loading').style.display = 'flex';
+  document.getElementById('teacher-student-list').innerHTML = '';
+  try{
+    const res = await authFetch('/api/teacher/students');
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || '학생 목록을 불러오지 못했어요.');
+    renderTeacherStudentList(data.students || []);
+  }catch(e){
+    console.error('Teacher dashboard error:', e);
+    document.getElementById('teacher-student-list').innerHTML = '<div class="banner">학생 목록을 불러오는 중 오류가 발생했어요: ' + e.message + '</div>';
+  }
+  document.getElementById('teacher-loading').style.display = 'none';
+}
+function renderTeacherStudentList(students){
+  document.getElementById('teacher-student-count').textContent = students.length + '명';
+  if(students.length === 0){
+    document.getElementById('teacher-student-list').innerHTML = '<div class="card" style="text-align:center; color:var(--ink-soft); font-size:13.5px;">아직 가입한 학생이 없어요.</div>';
+    return;
+  }
+  const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', diary:'📔' };
+  const html = students.map(s=>{
+    const doneCount = Object.values(s.completed).filter(Boolean).length;
+    const statusColor = doneCount >= 3 ? 'var(--success)' : doneCount >= 1 ? 'var(--warning)' : 'var(--error)';
+    const statusDot = doneCount >= 3 ? '🟢' : doneCount >= 1 ? '🟡' : '🔴';
+    const missionRow = Object.keys(missionIcons).map(type=>
+      `<span style="opacity:${s.completed[type] ? 1 : 0.25}; font-size:16px; margin-right:6px;" title="${type}">${missionIcons[type]}</span>`
+    ).join('');
+    return `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-weight:700; font-size:14.5px;">${statusDot} ${s.username}</span>
+        <span style="font-size:12px; color:var(--ink-soft); font-weight:600;">Lv.${s.level} · ${s.dayCount.toLocaleString('ko-KR')}일차</span>
+      </div>
+      <div style="margin-top:8px;">${missionRow}<span style="font-size:12px; color:var(--ink-soft); margin-left:4px;">${doneCount}/4 완료</span></div>
+      <div style="display:flex; gap:14px; margin-top:10px; font-size:12.5px; color:var(--ink-soft);">
+        <span>🔥 ${s.streak}일 연속</span>
+        <span>⭐ ${s.xp} XP</span>
+        <span>🗣️ ${s.usage.shadowing||0}/${s.dailyLimit}</span>
+        <span>✍️ ${s.usage.dictation||0}/${s.dailyLimit}</span>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('teacher-student-list').innerHTML = html;
+}
+
 function showToast(msg){
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
@@ -1459,7 +1564,12 @@ function initPattern(){
   document.getElementById('pattern-complete-btn').style.display = 'none';
   document.getElementById('pattern-mic-diff').innerHTML = '';
   document.getElementById('pattern-score-grid').style.display = 'none';
-  document.getElementById('pattern-rec-label').textContent = '버튼을 눌러 따라 말해보세요 (선택)';
+  document.getElementById('pattern-rec-label').textContent = '🎙 먼저 따라 말해보세요 (필수)';
+  document.getElementById('pattern-next-btn').disabled = true;
+  document.getElementById('pattern-record-btn').style.display = 'flex';
+  document.getElementById('pattern-manual-input').style.display = 'none';
+  document.getElementById('pattern-manual-input').value = '';
+  document.getElementById('pattern-manual-submit').style.display = 'none';
   updatePatternDots();
   goPatternStep(1);
 }
@@ -1483,7 +1593,10 @@ let patternRecognition = null;
 let patternRecognizing = false;
 function togglePatternRecording(){
   if(!SpeechRecognitionAPI){
-    document.getElementById('pattern-rec-label').textContent = '이 브라우저는 음성인식을 지원하지 않아요. Chrome 브라우저를 사용해주세요.';
+    document.getElementById('pattern-rec-label').textContent = '이 브라우저는 음성인식을 지원하지 않아요. 아래에 들은 문장을 입력해주세요.';
+    document.getElementById('pattern-record-btn').style.display = 'none';
+    document.getElementById('pattern-manual-input').style.display = 'block';
+    document.getElementById('pattern-manual-submit').style.display = 'block';
     return;
   }
   if(patternRecognizing){ patternRecognition.stop(); return; }
@@ -1503,7 +1616,8 @@ function togglePatternRecording(){
       document.getElementById('pattern-score-speed').textContent = wpm;
       document.getElementById('pattern-score-grid').style.display = 'grid';
       document.getElementById('pattern-mic-diff').innerHTML = diffHtml;
-      document.getElementById('pattern-rec-label').textContent = '버튼을 눌러 다시 녹음할 수 있어요';
+      document.getElementById('pattern-rec-label').textContent = '✓ 녹음 완료! 다시 녹음할 수도 있어요';
+      document.getElementById('pattern-next-btn').disabled = false;
     },
     (message)=>{
       patternRecognizing = false;
@@ -1521,12 +1635,31 @@ function togglePatternRecording(){
     }
   );
 }
+function scorePatternManual(){
+  const val = document.getElementById('pattern-manual-input').value;
+  if(!val.trim()){ showToast('문장을 입력해주세요'); return; }
+  const targetSentence = currentPatternSteps()[patternStepIndex].en;
+  const { accuracy, stress, intonation, wpm, diffHtml } = computeSpeechScore(targetSentence, val, 4);
+  document.getElementById('pattern-score-accuracy').textContent = accuracy+'%';
+  document.getElementById('pattern-score-stress').textContent = stress+'%';
+  document.getElementById('pattern-score-intonation').textContent = intonation+'%';
+  document.getElementById('pattern-score-speed').textContent = wpm;
+  document.getElementById('pattern-score-grid').style.display = 'grid';
+  document.getElementById('pattern-mic-diff').innerHTML = diffHtml;
+  document.getElementById('pattern-rec-label').textContent = '✓ 확인 완료!';
+  document.getElementById('pattern-next-btn').disabled = false;
+}
 function nextPatternStep(){
   patternStepIndex++;
   const steps = currentPatternSteps();
   document.getElementById('pattern-mic-diff').innerHTML = '';
   document.getElementById('pattern-score-grid').style.display = 'none';
-  document.getElementById('pattern-rec-label').textContent = '버튼을 눌러 따라 말해보세요 (선택)';
+  document.getElementById('pattern-rec-label').textContent = '🎙 먼저 따라 말해보세요 (필수)';
+  document.getElementById('pattern-next-btn').disabled = true;
+  document.getElementById('pattern-record-btn').style.display = 'flex';
+  document.getElementById('pattern-manual-input').style.display = 'none';
+  document.getElementById('pattern-manual-input').value = '';
+  document.getElementById('pattern-manual-submit').style.display = 'none';
   if(patternStepIndex < steps.length){
     document.getElementById('pattern-current-sentence').textContent = steps[patternStepIndex].en;
     document.getElementById('pattern-current-sentence-ko').textContent = steps[patternStepIndex].ko;
