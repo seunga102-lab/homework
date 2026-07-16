@@ -168,7 +168,7 @@
   .gauge-num{ font-family:'Sora',sans-serif; font-size:24px; font-weight:800; }
   .gauge-label{ font-size:11.5px; color:var(--ink-soft); font-weight:600; }
 
-  textarea, input[type=text]{
+  textarea, input[type=text], input[type=password]{
     width:100%; border:1px solid var(--line); border-radius:12px; padding:12px 14px;
     font-family:'Inter',sans-serif; font-size:14.5px; background:var(--paper-alt); color:var(--ink);
     resize:none;
@@ -294,7 +294,7 @@
           <p class="mission-title">쉐도잉</p>
           <p class="mission-sub">발음 · 억양 · 속도 분석 · 약 5분</p>
         </div>
-        <span class="mission-badge" id="badge-shadowing" style="display:none;">✓ 완료</span>
+        <span class="mission-badge" data-mission-type="shadowing" style="display:none;">✓ 완료</span>
         <div class="chev">›</div>
       </div>
 
@@ -304,7 +304,7 @@
           <p class="mission-title">딕테이션</p>
           <p class="mission-sub">듣고 받아쓰기 · AI 채점 · 약 5분</p>
         </div>
-        <span class="mission-badge" id="badge-dictation" style="display:none;">✓ 완료</span>
+        <span class="mission-badge" data-mission-type="dictation" style="display:none;">✓ 완료</span>
         <div class="chev">›</div>
       </div>
 
@@ -314,7 +314,7 @@
           <p class="mission-title">원어민 패턴 학습</p>
           <p class="mission-sub">"I'm the one who..." 패턴 · 약 7분</p>
         </div>
-        <span class="mission-badge" id="badge-pattern" style="display:none;">✓ 완료</span>
+        <span class="mission-badge" data-mission-type="pattern" style="display:none;">✓ 완료</span>
         <div class="chev">›</div>
       </div>
 
@@ -324,7 +324,7 @@
           <p class="mission-title">영어일기</p>
           <p class="mission-sub">자유 작문 · AI 첨삭 · 약 8분</p>
         </div>
-        <span class="mission-badge" id="badge-diary" style="display:none;">✓ 완료</span>
+        <span class="mission-badge" data-mission-type="diary" style="display:none;">✓ 완료</span>
         <div class="chev">›</div>
       </div>
 
@@ -470,7 +470,8 @@
     </div>
 
     <div id="pattern-step-5" style="display:none;">
-      <p style="font-size:13px; color:var(--ink-soft); margin-bottom:10px;">배운 패턴을 활용해 나만의 문장을 만들어보세요.</p>
+      <p style="font-size:13px; color:var(--ink-soft); margin-bottom:6px;">배운 패턴을 활용해 나만의 문장을 만들어보세요.</p>
+      <p style="font-size:15px; font-weight:700; margin:0 0 14px;">"<span id="pattern-reminder-en"></span>" <span style="font-weight:400; font-size:13px; color:var(--ink-soft);">(<span id="pattern-reminder-ko"></span>)</span></p>
       <textarea id="pattern-own-sentence" rows="3" placeholder="예: I'm the one who fixed the bug yesterday."></textarea>
       <button class="btn btn-primary" style="margin-top:10px;" onclick="submitPatternSentence()">AI 첨삭 받기</button>
       <div id="pattern-loading" class="loading-dots" style="display:none;"><span></span><span></span><span></span></div>
@@ -494,6 +495,52 @@
     <div id="diary-loading-text" class="loading-text" style="display:none;">AI가 문법과 표현을 분석하고 있어요...</div>
 
     <div id="diary-result" style="display:none; margin-top:16px;"></div>
+  </div>
+
+  <!-- ============ STUDY (학습 목록) ============ -->
+  <div class="screen" id="screen-study">
+    <h2 style="margin:0 0 4px;">학습</h2>
+    <p style="color:var(--ink-soft); font-size:13.5px; margin:0 0 16px;">오늘 학습할 항목을 선택하세요.</p>
+
+    <div class="mission-card card" onclick="go('shadowing')">
+      <div class="mission-icon" style="background:#E5F5F3;">🗣️</div>
+      <div>
+        <p class="mission-title">쉐도잉</p>
+        <p class="mission-sub">발음 · 억양 · 속도 분석 · 약 5분</p>
+      </div>
+      <span class="mission-badge" data-mission-type="shadowing" style="display:none;">✓ 완료</span>
+      <div class="chev">›</div>
+    </div>
+
+    <div class="mission-card card" onclick="go('dictation')">
+      <div class="mission-icon" style="background:#FDEEE9;">✍️</div>
+      <div>
+        <p class="mission-title">딕테이션</p>
+        <p class="mission-sub">듣고 받아쓰기 · AI 채점 · 약 5분</p>
+      </div>
+      <span class="mission-badge" data-mission-type="dictation" style="display:none;">✓ 완료</span>
+      <div class="chev">›</div>
+    </div>
+
+    <div class="mission-card card" onclick="go('pattern')">
+      <div class="mission-icon" style="background:#EFEBFB;">💬</div>
+      <div>
+        <p class="mission-title">원어민 패턴 학습</p>
+        <p class="mission-sub">패턴 문장 연습 · 약 7분</p>
+      </div>
+      <span class="mission-badge" data-mission-type="pattern" style="display:none;">✓ 완료</span>
+      <div class="chev">›</div>
+    </div>
+
+    <div class="mission-card card" onclick="go('diary')">
+      <div class="mission-icon" style="background:#FBF3DD;">📔</div>
+      <div>
+        <p class="mission-title">영어일기</p>
+        <p class="mission-sub">자유 작문 · AI 첨삭 · 약 8분</p>
+      </div>
+      <span class="mission-badge" data-mission-type="diary" style="display:none;">✓ 완료</span>
+      <div class="chev">›</div>
+    </div>
   </div>
 
   <!-- ============ REPORT ============ -->
@@ -554,7 +601,7 @@
 
   <div class="bottom-nav" style="display:none;">
     <button class="nav-item active" data-nav="home" onclick="go('home')"><span class="nav-icon">🏠</span>홈</button>
-    <button class="nav-item" data-nav="shadowing" onclick="go('shadowing')"><span class="nav-icon">🗣️</span>학습</button>
+    <button class="nav-item" data-nav="study" onclick="go('study')"><span class="nav-icon">🗣️</span>학습</button>
     <button class="nav-item" data-nav="report" onclick="openReport()"><span class="nav-icon">📈</span>리포트</button>
     <button class="nav-item" data-nav="me" onclick="openMyPage()"><span class="nav-icon">👤</span>마이</button>
   </div>
@@ -736,9 +783,9 @@ function renderHomeStats(){
   document.getElementById('today-progress-text').textContent = doneCount + '/4 완료';
   document.getElementById('today-progress-bar').style.width = (doneCount/4*100) + '%';
 
-  ['shadowing','dictation','pattern','diary'].forEach(type=>{
-    const badge = document.getElementById('badge-'+type);
-    if(badge) badge.style.display = state.completed[type] ? 'inline-block' : 'none';
+  document.querySelectorAll('.mission-badge[data-mission-type]').forEach(badge=>{
+    const type = badge.dataset.missionType;
+    badge.style.display = state.completed[type] ? 'inline-block' : 'none';
   });
 }
 function updateUsagePills(){
@@ -814,7 +861,7 @@ function go(screen){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+screen).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  const navMap = {home:'home', shadowing:'shadowing', dictation:'shadowing', pattern:'shadowing', diary:'shadowing', report:'report', mypage:'me'};
+  const navMap = {home:'home', study:'study', shadowing:'study', dictation:'study', pattern:'study', diary:'study', report:'report', mypage:'me'};
   const navEl = document.querySelector('[data-nav="'+(navMap[screen]||'home')+'"]');
   if(navEl) navEl.classList.add('active');
   document.querySelector('.bottom-nav').style.display = (screen==='login' || screen==='level-select') ? 'none' : 'flex';
@@ -1058,7 +1105,7 @@ function primeVoices(){
   speechSynthesis.onvoiceschanged = ()=>{ voicesReady = true; };
 }
 
-function speakText(text, rate){
+function speakText(text, rate, isRetry){
   if(!('speechSynthesis' in window)){
     showToast('이 브라우저는 음성 재생을 지원하지 않아요. Chrome 브라우저를 사용해주세요.');
     return;
@@ -1078,18 +1125,33 @@ function speakText(text, rate){
   utter.onstart = ()=>{ started = true; };
   utter.onerror = (e)=>{
     console.error('TTS error:', e);
-    showToast('음성 재생에 실패했어요. Chrome 브라우저로 열어보세요 🔊');
+    if(!isRetry){
+      // 첫 시도 실패 시 한 번 더 시도 (안드로이드 일부 브라우저는 음성 목록이 늦게 로드되어 첫 호출만 실패하는 경우가 있음)
+      setTimeout(()=> speakText(text, rate, true), 200);
+    } else {
+      showToast('음성 재생에 실패했어요. 기기의 "설정 > 접근성 > TTS(글자 읽어주기)"에서 영어 음성이 설치되어 있는지 확인해주세요 🔊');
+    }
   };
 
   currentUtterance = utter;
   speechSynthesis.speak(utter);
 
-  // 삼성인터넷 등 일부 브라우저는 에러 이벤트조차 없이 그냥 무음일 수 있어, 일정 시간 내 시작 안 하면 안내
+  // 크로미움 계열 안드로이드 브라우저(삼성인터넷 포함)에서 speak() 호출 직후 즉시 pause/resume을 해주면
+  // 무음으로 실패하던 것이 정상적으로 재생되는 경우가 있어 방어적으로 적용한다.
+  setTimeout(()=>{
+    try{ speechSynthesis.pause(); speechSynthesis.resume(); }catch(e){ /* 무시 */ }
+  }, 50);
+
+  // 에러 이벤트조차 없이 그냥 무음일 수 있어, 일정 시간 내 시작 안 하면 재시도 또는 안내
   setTimeout(()=>{
     if(!started){
-      showToast('소리가 안 들리면 Chrome 브라우저로 열어보세요 🔊 (삼성인터넷 등 일부 브라우저는 음성 재생이 제한돼요)');
+      if(!isRetry){
+        speakText(text, rate, true);
+      } else {
+        showToast('소리가 안 들리면 기기의 "설정 > 접근성 > TTS(글자 읽어주기)"에서 영어 음성팩이 설치되어 있는지 확인해주세요 🔊');
+      }
     }
-  }, 900);
+  }, 1000);
 }
 
 function playShadowSentence(){
@@ -1476,6 +1538,11 @@ function nextPatternStep(){
 function goPatternStep(n){
   document.getElementById('pattern-step-1-3').style.display = n<=3 ? 'block':'none';
   document.getElementById('pattern-step-5').style.display = n===5 ? 'block':'none';
+  if(n===5){
+    const steps = currentPatternSteps();
+    document.getElementById('pattern-reminder-en').textContent = steps[0].en;
+    document.getElementById('pattern-reminder-ko').textContent = steps[0].ko;
+  }
   updatePatternDots();
 }
 async function submitPatternSentence(){
@@ -1485,14 +1552,40 @@ async function submitPatternSentence(){
   document.getElementById('pattern-result').innerHTML='';
 
   const sys = `너는 영어 작문 첨삭 AI다. 학생의 레벨은 ${currentLevelData().name}(${currentLevelData().cefr})이고, "${currentPatternSteps()[0].en}" 패턴을 연습 중이며 이 문장을 응용해서 작문했다.
-반드시 순수 JSON만 응답: {"corrected": "수정된 문장", "explanation": "무엇을 왜 고쳤는지 한글로 2문장 이내", "natural_alt": "더 자연스러운 원어민식 표현 (다르면 제시, 같으면 동일 문장)"}`;
+문법/철자 오류가 전혀 없으면 has_errors를 false로 하고 진심 어린 칭찬을 praise에 한글로 작성하라. 오류가 있으면 has_errors를 true로 하라.
+반드시 순수 JSON만 응답: {"has_errors": true/false, "corrected": "수정된 문장 (오류 없으면 원문과 동일)", "corrected_ko": "수정된 문장의 한글 뜻", "explanation": "무엇을 왜 고쳤는지 한글로 2문장 이내 (오류 없으면 빈 문자열)", "natural_alt": "더 자연스러운 원어민식 표현 (다르면 제시, 같으면 원문과 동일 문장)", "natural_alt_ko": "그 자연스러운 표현의 한글 뜻", "praise": "칭찬 한글 문구 (오류가 없을 때만 사용, 있으면 빈 문자열)"}`;
   try{
     const raw = await callClaude(sys, `학생 문장: "${val}"`);
     const r = safeJsonParse(raw);
-    document.getElementById('pattern-result').innerHTML = `
+
+    // AI가 has_errors 판단을 가끔 헷갈려하므로, 수정 문장이 학생 문장과 사실상 동일하면 "오류 없음"으로 강제 보정한다.
+    const normalize = s => (s||'').trim().toLowerCase().replace(/[.!?]+$/,'');
+    if(normalize(r.corrected) === normalize(val)){
+      r.has_errors = false;
+      if(!r.praise) r.praise = '문법도 표현도 정확해요! 패턴을 아주 잘 활용했어요 👏';
+    }
+
+    let html = '';
+    if(!r.has_errors){
+      html += `
+      <div class="feedback-block" style="border-left-color:var(--success);">
+        <div class="feedback-title" style="color:var(--success);">🎉 완벽해요!</div>
+        <div style="font-size:14px;">${r.praise}</div>
+      </div>`;
+      if(r.natural_alt && r.natural_alt.trim() !== val){
+        html += `
+      <div class="feedback-block" style="border-left-color:var(--coral);">
+        <div class="feedback-title" style="color:var(--coral-dark);">원어민이라면 이렇게도 말해요</div>
+        <div style="font-size:14px;">${r.natural_alt}</div>
+        <div style="font-size:13px; color:var(--ink-soft); margin-top:4px;">${r.natural_alt_ko||''}</div>
+      </div>`;
+      }
+    } else {
+      html += `
       <div class="feedback-block">
         <div class="feedback-title">수정 문장</div>
         <div style="font-size:15px; font-weight:600;">${r.corrected}</div>
+        <div style="font-size:13px; color:var(--ink-soft); margin-top:4px;">${r.corrected_ko||''}</div>
       </div>
       <div class="feedback-block">
         <div class="feedback-title">설명</div>
@@ -1501,7 +1594,10 @@ async function submitPatternSentence(){
       <div class="feedback-block" style="border-left-color:var(--coral);">
         <div class="feedback-title" style="color:var(--coral-dark);">원어민이라면 이렇게도 말해요</div>
         <div style="font-size:14px;">${r.natural_alt}</div>
+        <div style="font-size:13px; color:var(--ink-soft); margin-top:4px;">${r.natural_alt_ko||''}</div>
       </div>`;
+    }
+    document.getElementById('pattern-result').innerHTML = html;
     document.getElementById('pattern-complete-btn').style.display = 'block';
   }catch(e){
     console.error('Pattern correction AI error:', e);
@@ -1527,7 +1623,7 @@ async function submitDiary(){
 
   const sys = `너는 영어일기 첨삭 AI다. 학생의 레벨은 ${currentLevelData().name}(${currentLevelData().cefr})이다. 학생의 영어일기를 분석한다. 칭찬을 먼저 하고, 개선점은 최대 3개까지만 제시하며 학생 레벨에 맞는 눈높이로 설명한다.
 반드시 순수 JSON만 응답:
-{"cefr":"A1~C1 중 하나","praise":"칭찬 한글 1문장","grammar_fixes":[{"wrong":"","correct":"","reason":""}],"natural_expressions":[{"original":"","better":""}],"recommended_words":["word1","word2","word3"],"weakness_tags":["태그1","태그2"]}`;
+{"praise":"칭찬 한글 1문장","grammar_fixes":[{"wrong":"","correct":"","reason":""}],"natural_expressions":[{"original":"","better":""}],"recommended_words":["word1","word2","word3"],"weakness_tags":["태그1","태그2"]}`;
 
   try{
     const raw = await callClaude(sys, `학생 일기: """${text}"""`);
@@ -1555,10 +1651,6 @@ function renderDiaryResult(r){
 
   document.getElementById('diary-result').innerHTML = `
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-        <span style="font-weight:700;">CEFR 평가</span>
-        <span class="gauge-num" style="font-size:20px;">${r.cefr}</span>
-      </div>
       <div style="font-size:14px; color:var(--teal-dark); font-weight:600;">${r.praise}</div>
       <div class="feedback-block"><div class="feedback-title">문법 첨삭</div>${fixesHtml}</div>
       <div class="feedback-block"><div class="feedback-title">더 자연스러운 표현</div>${naturalHtml}</div>
