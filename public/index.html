@@ -380,13 +380,14 @@
         <div id="shadow-diff" style="font-size:15px; line-height:1.8;"></div>
         <p style="font-size:11.5px; color:var(--ink-soft); margin-top:8px;">* 강세/억양 점수는 데모용 추정치이며, 실제 서비스에서는 음소 단위 정밀 분석(forced alignment)을 사용합니다.</p>
       </div>
-      <div class="btn-row" style="margin-top:12px;">
-        <button class="btn btn-secondary" onclick="resetShadowing()">다시하기</button>
-        <button class="btn btn-primary" onclick="completeMission('shadowing')">완료하고 다음으로</button>
+      <div id="shadow-auto-advance-label" style="text-align:center; font-size:12.5px; color:var(--ink-soft); margin-top:10px;"></div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-primary" onclick="skipToNextShadow()">지금 다음으로 →</button>
       </div>
     </div>
     </div>
   </div>
+
 
   <!-- ============ DICTATION ============ -->
   <div class="screen" id="screen-dictation">
@@ -714,7 +715,35 @@ async function useDailyCredit(type){
 }
 
 /* ================= NAV ================= */
+// 쉐도잉/딕테이션: 채점 결과가 나온 후 자동으로 다음 문장으로 넘어가기 위한 카운트다운 타이머
+let autoAdvanceTimers = {};
+function clearAutoAdvance(key){
+  if(autoAdvanceTimers[key]){
+    clearInterval(autoAdvanceTimers[key]);
+    autoAdvanceTimers[key] = null;
+  }
+}
+function startAutoAdvance(key, seconds, onDone, labelElId){
+  clearAutoAdvance(key);
+  let remaining = seconds;
+  const labelEl = document.getElementById(labelElId);
+  function render(){
+    if(labelEl) labelEl.textContent = remaining > 0 ? (remaining + '초 후 다음 문장으로 자동 이동') : '다음 문장으로 이동 중...';
+  }
+  render();
+  autoAdvanceTimers[key] = setInterval(()=>{
+    remaining -= 1;
+    render();
+    if(remaining <= 0){
+      clearAutoAdvance(key);
+      onDone();
+    }
+  }, 1000);
+}
+
 function go(screen){
+  clearAutoAdvance('shadow');
+  clearAutoAdvance('dict');
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+screen).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -906,6 +935,7 @@ function initShadowSentence(){
   document.getElementById('shadow-sentence-ko').textContent = list[shadowIndex].ko;
   document.getElementById('shadow-result').style.display = 'none';
   shadowCreditConsumedForCurrent = false;
+  clearAutoAdvance('shadow');
 }
 function setShadowRate(rate, el){
   shadowRate = rate;
@@ -964,6 +994,17 @@ function resetShadowing(){
   const list = currentLevelData().shadow;
   shadowIndex = (shadowIndex+1) % list.length;
   initShadowSentence();
+}
+function advanceShadowingOrFinish(){
+  if((state.usage.shadowing||0) >= state.dailyLimit){
+    completeMission('shadowing');
+  } else {
+    resetShadowing();
+  }
+}
+function skipToNextShadow(){
+  clearAutoAdvance('shadow');
+  advanceShadowingOrFinish();
 }
 
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1130,6 +1171,8 @@ async function scoreShadowing(transcript, durationSec){
   document.getElementById('shadow-diff').innerHTML = diffHtml;
   document.getElementById('shadow-result').style.display = 'block';
   document.getElementById('shadow-rec-label').textContent = '버튼을 눌러 다시 녹음할 수 있어요';
+
+  startAutoAdvance('shadow', 3, advanceShadowingOrFinish, 'shadow-auto-advance-label');
 }
 
 /* ================= DICTATION ================= */
@@ -1152,6 +1195,7 @@ function nextDictSentence(){
   document.getElementById('dict-input-ko').value = '';
   document.getElementById('dict-result').style.display = 'none';
   dictCreditConsumedForCurrent = false;
+  clearAutoAdvance('dict');
 }
 async function submitDictation(){
   const en = document.getElementById('dict-input-en').value.trim();
@@ -1192,6 +1236,17 @@ async function submitDictation(){
   document.getElementById('dict-loading').style.display='none';
   document.getElementById('dict-loading-text').style.display='none';
 }
+function advanceDictOrFinish(){
+  if((state.usage.dictation||0) >= state.dailyLimit){
+    completeMission('dictation');
+  } else {
+    nextDictSentence();
+  }
+}
+function skipToNextDict(){
+  clearAutoAdvance('dict');
+  advanceDictOrFinish();
+}
 function renderDictResult(r){
   let errHtml = r.spelling_errors && r.spelling_errors.length
     ? r.spelling_errors.map(e=>`<span class="tag" style="color:var(--error); border-color:#f3c8c8;">${e.wrong} → ${e.correct}</span>`).join('')
@@ -1215,12 +1270,14 @@ function renderDictResult(r){
         <div class="feedback-title" style="color:var(--coral-dark);">AI 한마디</div>
         <div style="font-size:14px;">${r.praise}</div>
       </div>
-      <div class="btn-row" style="margin-top:14px;">
-        <button class="btn btn-secondary" onclick="nextDictSentence()">다른 문장 연습</button>
-        <button class="btn btn-primary" onclick="completeMission('dictation')">완료하고 홈으로</button>
+      <div id="dict-auto-advance-label" style="text-align:center; font-size:12.5px; color:var(--ink-soft); margin-top:2px;"></div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn btn-primary" onclick="skipToNextDict()">지금 다음으로 →</button>
+      </div>
       </div>
     </div>`;
   document.getElementById('dict-result').style.display='block';
+  startAutoAdvance('dict', 3, advanceDictOrFinish, 'dict-auto-advance-label');
 }
 
 /* ================= PATTERN ================= */
