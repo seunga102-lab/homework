@@ -1,278 +1,1462 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
-const crypto = require('crypto');
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Talk Pro — AI 영어회화 학습</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#14213D;
+    --ink-soft:#5B6485;
+    --paper:#F3F2ED;
+    --paper-alt:#FFFFFF;
+    --line:#E3E1D8;
+    --teal:#0E9E93;
+    --teal-dark:#0B7A72;
+    --coral:#FF5A36;
+    --coral-dark:#E0431F;
+    --success:#1E9E52;
+    --success-bg:#E7F6EC;
+    --error:#DC2626;
+    --error-bg:#FDEAEA;
+    --warning:#B4740E;
+    --warning-bg:#FBF0DD;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{
+    max-width:460px;
+    margin:0 auto;
+    min-height:100vh;
+    background:var(--paper);
+    position:relative;
+    padding-bottom:84px;
+  }
+  h1,h2,h3,.display{ font-family:'Sora',sans-serif; }
+  .screen{ display:none; padding:20px 20px 8px; animation:fadein .25s ease; }
+  .screen.active{ display:block; }
+  @keyframes fadein{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
+  /* ---- Top bar ---- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 20px 10px;
+  }
+  .logo{ display:flex; align-items:center; gap:8px; font-weight:800; font-size:19px; letter-spacing:-.02em;}
+  .logo .wave{ display:flex; align-items:flex-end; gap:2px; height:18px; }
+  .logo .wave span{ width:3px; background:var(--coral); border-radius:2px; display:block; }
+  .stat-pills{ display:flex; gap:8px; }
+  .pill{
+    display:flex; align-items:center; gap:4px;
+    background:var(--paper-alt); border:1px solid var(--line);
+    padding:5px 10px; border-radius:20px; font-size:13px; font-weight:600;
+  }
 
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-if (!process.env.SESSION_SECRET) {
-  console.warn('⚠️  SESSION_SECRET 환경변수가 설정되어 있지 않습니다. 서버가 재시작되면 모든 로그인 세션이 초기화됩니다.');
+  /* ---- Cards ---- */
+  .card{
+    background:var(--paper-alt); border:1px solid var(--line);
+    border-radius:var(--radius); padding:18px; margin-bottom:14px;
+  }
+  .mission-card{
+    display:flex; align-items:center; gap:14px; cursor:pointer;
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .mission-card:active{ transform:scale(.98); }
+  .mission-card:hover{ box-shadow:0 4px 16px rgba(20,33,61,.08); }
+  .mission-icon{
+    width:46px; height:46px; border-radius:12px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:20px;
+  }
+  .mission-title{ font-weight:700; font-size:15px; margin:0 0 2px; }
+  .mission-sub{ font-size:12.5px; color:var(--ink-soft); margin:0;}
+  .chev{ margin-left:auto; color:var(--ink-soft); }
+
+  .section-label{
+    font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--ink-soft); margin:22px 0 10px;
+  }
+
+  /* ---- Buttons ---- */
+  .btn{
+    border:none; border-radius:12px; padding:14px 18px; font-weight:700; font-size:15px;
+    cursor:pointer; width:100%; font-family:'Inter',sans-serif; transition:opacity .15s, transform .1s;
+  }
+  .btn:active{ transform:scale(.98); }
+  .btn-primary{ background:var(--coral); color:#fff; }
+  .btn-primary:hover{ background:var(--coral-dark); }
+  .btn-secondary{ background:var(--paper); color:var(--ink); border:1px solid var(--line); }
+  .btn-teal{ background:var(--teal); color:#fff; }
+  .btn-ghost{ background:transparent; color:var(--ink-soft); font-weight:600; }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+  .btn-row{ display:flex; gap:10px; }
+
+  .back-btn{
+    display:flex; align-items:center; gap:6px; color:var(--ink-soft); font-weight:600;
+    font-size:14px; cursor:pointer; margin-bottom:14px; background:none; border:none; padding:4px 0;
+  }
+
+  /* ---- Progress ---- */
+  .xp-bar-track{ background:var(--line); border-radius:8px; height:8px; overflow:hidden; }
+  .xp-bar-fill{ background:linear-gradient(90deg,var(--teal),var(--coral)); height:100%; transition:width .4s ease; }
+
+  /* ---- Bottom nav ---- */
+  .bottom-nav{
+    position:fixed; bottom:0; left:50%; transform:translateX(-50%);
+    width:100%; max-width:460px; background:var(--paper-alt); border-top:1px solid var(--line);
+    display:flex; justify-content:space-around; padding:10px 6px 14px; z-index:20;
+  }
+  .nav-item{ display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; color:var(--ink-soft); font-weight:600; cursor:pointer; background:none;border:none;}
+  .nav-item.active{ color:var(--coral); }
+  .nav-icon{ font-size:18px; }
+
+  /* ---- Sentence display ---- */
+  .sentence-box{
+    background:var(--paper); border:1px solid var(--line); border-radius:var(--radius);
+    padding:24px 20px; text-align:center; margin-bottom:16px;
+  }
+  .sentence-en{ font-family:'Sora',sans-serif; font-size:20px; font-weight:600; line-height:1.5; }
+  .sentence-ko{ color:var(--ink-soft); font-size:13.5px; margin-top:8px; }
+  .word{ transition:background .2s; padding:1px 2px; border-radius:4px;}
+  .word.match{ background:var(--success-bg); color:var(--success); }
+  .word.miss{ background:var(--error-bg); color:var(--error); text-decoration:underline wavy var(--error); }
+
+  .speed-row{ display:flex; gap:8px; justify-content:center; margin-bottom:16px; }
+  .speed-chip{
+    border:1px solid var(--line); background:var(--paper-alt); border-radius:20px; padding:6px 14px;
+    font-size:13px; font-weight:600; cursor:pointer; color:var(--ink-soft);
+  }
+  .speed-chip.active{ background:var(--ink); color:#fff; border-color:var(--ink); }
+
+  .level-chip{
+    flex-shrink:0; border:1px solid var(--line); background:var(--paper);
+    border-radius:10px; padding:8px 12px; font-size:12.5px; font-weight:700; cursor:pointer;
+    color:var(--ink-soft); text-align:center; min-width:52px;
+  }
+  .level-chip.active{ background:var(--teal); color:#fff; border-color:var(--teal); }
+
+  .play-btn{
+    width:56px; height:56px; border-radius:50%; background:var(--ink); color:#fff; border:none;
+    font-size:20px; display:flex; align-items:center; justify-content:center; cursor:pointer; margin:0 auto 18px;
+  }
+
+  .record-btn{
+    width:76px; height:76px; border-radius:50%; background:var(--coral); color:#fff; border:none;
+    font-size:26px; display:flex; align-items:center; justify-content:center; cursor:pointer; margin:0 auto;
+    box-shadow:0 0 0 0 rgba(255,90,54,.4);
+  }
+  .record-btn.recording{ animation:pulse 1.2s infinite; background:var(--error); }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(220,38,38,.4);}
+    70%{ box-shadow:0 0 0 16px rgba(220,38,38,0);}
+    100%{ box-shadow:0 0 0 0 rgba(220,38,38,0);}
+  }
+  .rec-label{ text-align:center; font-size:12.5px; color:var(--ink-soft); margin-top:8px; }
+
+  /* ---- Score gauges ---- */
+  .score-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0; }
+  .gauge-card{ background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:12px; text-align:center; }
+  .gauge-num{ font-family:'Sora',sans-serif; font-size:24px; font-weight:800; }
+  .gauge-label{ font-size:11.5px; color:var(--ink-soft); font-weight:600; }
+
+  textarea, input[type=text]{
+    width:100%; border:1px solid var(--line); border-radius:12px; padding:12px 14px;
+    font-family:'Inter',sans-serif; font-size:14.5px; background:var(--paper-alt); color:var(--ink);
+    resize:none;
+  }
+  textarea:focus, input:focus{ outline:2px solid var(--teal); outline-offset:-1px; }
+  label.field-label{ font-size:12.5px; font-weight:700; color:var(--ink-soft); display:block; margin:12px 0 5px; }
+
+  .feedback-block{ background:var(--paper); border-radius:12px; padding:14px; margin-top:10px; border-left:3px solid var(--teal); }
+  .feedback-title{ font-weight:700; font-size:13px; margin-bottom:6px; color:var(--teal-dark); }
+  .tag{ display:inline-block; background:var(--paper); border:1px solid var(--line); padding:3px 9px; border-radius:14px; font-size:11.5px; margin:3px 4px 0 0; font-weight:600; color:var(--ink-soft); }
+
+  .loading-dots{ display:flex; gap:5px; justify-content:center; padding:20px 0; }
+  .loading-dots span{ width:8px; height:8px; border-radius:50%; background:var(--teal); animation:bounce 1.2s infinite; }
+  .loading-dots span:nth-child(2){ animation-delay:.15s; }
+  .loading-dots span:nth-child(3){ animation-delay:.3s; }
+  @keyframes bounce{ 0%,80%,100%{transform:translateY(0); opacity:.5;} 40%{transform:translateY(-6px); opacity:1;} }
+  .loading-text{ text-align:center; font-size:12.5px; color:var(--ink-soft); margin-top:-8px;}
+
+  .step-track{ display:flex; gap:6px; margin-bottom:18px; }
+  .step-dot{ flex:1; height:5px; border-radius:3px; background:var(--line); }
+  .step-dot.done{ background:var(--teal); }
+  .step-dot.current{ background:var(--coral); }
+
+  .chat-log{ display:flex; flex-direction:column; gap:10px; margin-bottom:14px; max-height:300px; overflow-y:auto; }
+  .bubble{ max-width:80%; padding:10px 13px; border-radius:14px; font-size:14px; line-height:1.4; }
+  .bubble.ai{ background:var(--paper); align-self:flex-start; border-bottom-left-radius:4px; }
+  .bubble.me{ background:var(--teal); color:#fff; align-self:flex-end; border-bottom-right-radius:4px; }
+
+  .banner{ background:var(--warning-bg); border:1px solid #EAD9B0; color:var(--warning); font-size:12.5px; padding:10px 12px; border-radius:10px; margin-bottom:14px; }
+  .toast{
+    position:fixed; bottom:100px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:10px 20px; border-radius:24px; font-size:13.5px; font-weight:600;
+    z-index:50; opacity:0; transition:opacity .3s, transform .3s; pointer-events:none;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-6px); }
+
+  .diff-add{ background:var(--success-bg); color:var(--success); padding:1px 3px; border-radius:3px; }
+  .diff-del{ background:var(--error-bg); color:var(--error); text-decoration:line-through; padding:1px 3px; border-radius:3px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ LOGIN / SIGNUP ============ -->
+  <div class="screen active" id="screen-login">
+    <div style="padding:60px 8px 20px; text-align:center;">
+      <div class="logo" style="justify-content:center; font-size:26px; margin-bottom:6px;">
+        <span class="wave"><span style="height:8px"></span><span style="height:18px"></span><span style="height:12px"></span><span style="height:22px"></span></span>
+        Talk Pro
+      </div>
+      <p style="color:var(--ink-soft); font-size:13.5px; margin:0 0 28px;">AI와 함께하는 영어회화 학습</p>
+    </div>
+
+    <div class="btn-row" style="margin-bottom:18px;">
+      <button class="btn" id="auth-tab-login" onclick="switchAuthTab('login')" style="background:var(--ink); color:#fff;">로그인</button>
+      <button class="btn btn-secondary" id="auth-tab-signup" onclick="switchAuthTab('signup')">회원가입</button>
+    </div>
+
+    <label class="field-label">아이디</label>
+    <input type="text" id="auth-username" placeholder="영문/숫자 3~20자" autocomplete="username">
+    <label class="field-label">비밀번호</label>
+    <input type="password" id="auth-password" placeholder="4자 이상" autocomplete="current-password">
+
+    <div id="auth-error" class="banner" style="display:none; margin-top:14px;"></div>
+
+    <button class="btn btn-primary" id="auth-submit-btn" style="margin-top:18px;" onclick="submitAuth()">로그인</button>
+    <div id="auth-loading" class="loading-dots" style="display:none;"><span></span><span></span><span></span></div>
+  </div>
+
+  <!-- ============ LEVEL SELECT (온보딩) ============ -->
+  <div class="screen" id="screen-level-select">
+    <div style="padding:40px 4px 10px; text-align:center;">
+      <h2 style="margin:0 0 6px;">레벨을 선택해주세요</h2>
+      <p style="color:var(--ink-soft); font-size:13.5px; margin:0;">나에게 맞는 난이도로 학습을 시작해요</p>
+    </div>
+    <div id="level-select-list" style="margin-top:20px;"></div>
+    <button class="btn btn-primary" style="margin-top:8px;" onclick="confirmLevelSelect()">이 레벨로 학습 시작하기</button>
+  </div>
+
+  <!-- ============ HOME ============ -->
+  <div class="screen" id="screen-home">
+    <div class="topbar">
+      <div class="logo">
+        <span class="wave"><span style="height:6px"></span><span style="height:14px"></span><span style="height:9px"></span><span style="height:17px"></span></span>
+
+        Talk Pro
+      </div>
+      <div class="stat-pills">
+        <div class="pill">🔥 <span id="streak-count">0</span></div>
+        <div class="pill">⭐ <span id="xp-count">0</span> XP</div>
+        <div class="pill" style="cursor:pointer;" onclick="logout()">🚪</div>
+      </div>
+    </div>
+
+    <div style="padding:0 20px;">
+      <div class="card" style="text-align:center; background:linear-gradient(135deg, var(--ink), var(--teal-dark)); border:none; padding:18px;">
+        <div style="color:rgba(255,255,255,.75); font-size:12.5px; font-weight:600; letter-spacing:.04em;">TALK PRO WITH ME</div>
+        <div style="color:#fff; font-family:'Sora',sans-serif; font-weight:800; font-size:28px; margin-top:2px;" id="day-count-display">1일차</div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-weight:700; font-size:14px;">오늘의 학습 진행률</span>
+          <span id="today-progress-text" style="font-size:13px; color:var(--ink-soft); font-weight:600;">0/4 완료</span>
+        </div>
+        <div class="xp-bar-track"><div class="xp-bar-fill" id="today-progress-bar" style="width:0%"></div></div>
+      </div>
+
+      <div class="section-label">내 레벨</div>
+      <div class="card" style="padding:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <span id="level-name-display" style="font-weight:700; font-size:14px;">Lv.3 초중급</span>
+          <span id="level-cefr-display" style="font-size:12px; color:var(--ink-soft); font-weight:600;">CEFR A2-B1</span>
+        </div>
+        <div id="level-chip-row" style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px;"></div>
+      </div>
+
+      <div class="section-label">오늘의 추천 미션</div>
+
+      <div class="mission-card card" onclick="go('shadowing')">
+        <div class="mission-icon" style="background:#E5F5F3;">🗣️</div>
+        <div>
+          <p class="mission-title">쉐도잉</p>
+          <p class="mission-sub">발음 · 억양 · 속도 분석 · 약 5분</p>
+        </div>
+        <div class="chev">›</div>
+      </div>
+
+      <div class="mission-card card" onclick="go('dictation')">
+        <div class="mission-icon" style="background:#FDEEE9;">✍️</div>
+        <div>
+          <p class="mission-title">딕테이션</p>
+          <p class="mission-sub">듣고 받아쓰기 · AI 채점 · 약 5분</p>
+        </div>
+        <div class="chev">›</div>
+      </div>
+
+      <div class="mission-card card" onclick="go('pattern')">
+        <div class="mission-icon" style="background:#EFEBFB;">💬</div>
+        <div>
+          <p class="mission-title">원어민 패턴 학습</p>
+          <p class="mission-sub">"I'm the one who..." 패턴 · 약 7분</p>
+        </div>
+        <div class="chev">›</div>
+      </div>
+
+      <div class="mission-card card" onclick="go('diary')">
+        <div class="mission-icon" style="background:#FBF3DD;">📔</div>
+        <div>
+          <p class="mission-title">영어일기</p>
+          <p class="mission-sub">자유 작문 · AI 첨삭 · 약 8분</p>
+        </div>
+        <div class="chev">›</div>
+      </div>
+
+      <div class="section-label">획득한 뱃지</div>
+      <div style="display:flex; gap:10px;" id="badge-row">
+        <div class="pill" style="opacity:.4;">🏅 첫 쉐도잉</div>
+        <div class="pill" style="opacity:.4;">🔥 3일 연속</div>
+        <div class="pill" style="opacity:.4;">📔 첫 일기</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHADOWING ============ -->
+  <div class="screen" id="screen-shadowing">
+    <button class="back-btn" onclick="go('home')">‹ 홈으로</button>
+    <h2 style="margin:0 0 4px;">쉐도잉</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <p style="color:var(--ink-soft); font-size:13.5px; margin:0;">문장을 듣고 최대한 똑같이 따라 말해보세요.</p>
+      <span class="pill" id="shadow-usage-pill" style="flex-shrink:0; margin-left:8px;">0/3</span>
+    </div>
+
+    <div id="shadow-limit-reached" class="card" style="display:none; text-align:center; padding:32px 20px;">
+      <div style="font-size:36px; margin-bottom:10px;">🌙</div>
+      <p style="font-weight:700; margin:0 0 4px;">오늘의 쉐도잉 학습을 모두 완료했어요!</p>
+      <p style="color:var(--ink-soft); font-size:13.5px; margin:0;">내일 다시 3문장으로 만나요.</p>
+    </div>
+
+    <div id="shadow-main-content">
+    <div id="shadow-mic-banner" class="banner" style="display:none;">
+      이 브라우저는 음성 인식을 지원하지 않아요. 데스크탑 Chrome 브라우저에서 실행하면 실제 발음 분석을 체험할 수 있어요. 지금은 텍스트로 직접 입력해 채점을 시뮬레이션합니다.
+    </div>
+
+    <div class="sentence-box">
+      <div class="sentence-en" id="shadow-sentence-en">Loading...</div>
+      <div class="sentence-ko" id="shadow-sentence-ko"></div>
+    </div>
+
+    <div class="speed-row">
+      <div class="speed-chip" data-rate="0.7" onclick="setShadowRate(0.7,this)">0.7x</div>
+      <div class="speed-chip active" data-rate="1.0" onclick="setShadowRate(1.0,this)">1.0x</div>
+      <div class="speed-chip" data-rate="1.3" onclick="setShadowRate(1.3,this)">1.3x</div>
+    </div>
+
+    <button class="play-btn" onclick="playShadowSentence()">▶</button>
+
+    <div id="shadow-record-area">
+      <button class="record-btn" id="shadow-record-btn" onclick="toggleShadowRecording()">🎙</button>
+      <div class="rec-label" id="shadow-rec-label">버튼을 눌러 따라 말해보세요</div>
+    </div>
+
+    <input type="text" id="shadow-manual-input" style="display:none; margin-top:14px;" placeholder="들은 문장을 그대로 입력해보세요">
+    <button class="btn btn-primary" id="shadow-manual-submit" style="display:none; margin-top:10px;" onclick="scoreShadowManual()">채점하기</button>
+
+    <div id="shadow-result" style="display:none; margin-top:18px;">
+      <div class="score-grid">
+        <div class="gauge-card"><div class="gauge-num" id="score-accuracy">-</div><div class="gauge-label">정확도</div></div>
+        <div class="gauge-card"><div class="gauge-num" id="score-stress">-</div><div class="gauge-label">강세</div></div>
+        <div class="gauge-card"><div class="gauge-num" id="score-intonation">-</div><div class="gauge-label">억양</div></div>
+        <div class="gauge-card"><div class="gauge-num" id="score-speed">-</div><div class="gauge-label">속도(WPM)</div></div>
+      </div>
+      <div class="card">
+        <div class="feedback-title">내가 말한 문장 비교</div>
+        <div id="shadow-diff" style="font-size:15px; line-height:1.8;"></div>
+        <p style="font-size:11.5px; color:var(--ink-soft); margin-top:8px;">* 강세/억양 점수는 데모용 추정치이며, 실제 서비스에서는 음소 단위 정밀 분석(forced alignment)을 사용합니다.</p>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-primary" onclick="skipToNextShadow()">다음 문장으로 →</button>
+      </div>
+    </div>
+    </div>
+  </div>
+
+
+  <!-- ============ DICTATION ============ -->
+  <div class="screen" id="screen-dictation">
+    <button class="back-btn" onclick="go('home')">‹ 홈으로</button>
+    <h2 style="margin:0 0 4px;">딕테이션</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <p style="color:var(--ink-soft); font-size:13.5px; margin:0;">음성을 듣고 영어와 한글 뜻을 받아써보세요.</p>
+      <span class="pill" id="dict-usage-pill" style="flex-shrink:0; margin-left:8px;">0/3</span>
+    </div>
+
+    <div id="dict-limit-reached" class="card" style="display:none; text-align:center; padding:32px 20px;">
+      <div style="font-size:36px; margin-bottom:10px;">🌙</div>
+      <p style="font-weight:700; margin:0 0 4px;">오늘의 딕테이션 학습을 모두 완료했어요!</p>
+      <p style="color:var(--ink-soft); font-size:13.5px; margin:0;">내일 다시 3문장으로 만나요.</p>
+    </div>
+
+    <div id="dict-main-content">
+    <div class="sentence-box" style="padding:16px;">
+      <div class="speed-row" style="margin-bottom:14px;">
+        <div class="speed-chip" data-rate="0.7" onclick="setDictRate(0.7,this)">0.7x</div>
+        <div class="speed-chip active" data-rate="1.0" onclick="setDictRate(1.0,this)">1.0x</div>
+        <div class="speed-chip" data-rate="1.3" onclick="setDictRate(1.3,this)">1.3x</div>
+      </div>
+      <button class="play-btn" style="margin-bottom:0;" onclick="playDictSentence()">▶</button>
+    </div>
+
+    <label class="field-label">영어로 받아쓰기</label>
+    <input type="text" id="dict-input-en" placeholder="들은 문장을 영어로 입력하세요">
+    <label class="field-label">한글 뜻</label>
+    <input type="text" id="dict-input-ko" placeholder="문장의 뜻을 한글로 입력하세요">
+
+    <button class="btn btn-primary" style="margin-top:16px;" onclick="submitDictation()">AI 채점하기</button>
+
+    <div id="dict-loading" class="loading-dots" style="display:none;"><span></span><span></span><span></span></div>
+    <div id="dict-loading-text" class="loading-text" style="display:none;">AI가 철자와 문법을 확인하고 있어요...</div>
+
+    <div id="dict-result" style="display:none; margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <!-- ============ PATTERN ============ -->
+  <div class="screen" id="screen-pattern">
+    <button class="back-btn" onclick="go('home')">‹ 홈으로</button>
+    <h2 style="margin:0 0 4px;">원어민 패턴 학습</h2>
+    <p style="color:var(--ink-soft); font-size:13.5px; margin:0 0 16px;" id="pattern-sub">문장이 점점 길어집니다. 큰 소리로 따라 말해보세요.</p>
+
+    <div class="step-track" id="pattern-steps">
+      <div class="step-dot current"></div><div class="step-dot"></div><div class="step-dot"></div><div class="step-dot"></div>
+    </div>
+
+    <div id="pattern-step-1-3">
+      <div class="sentence-box">
+        <div class="sentence-en" id="pattern-current-sentence"></div>
+      </div>
+      <button class="play-btn" onclick="playPatternSentence()">▶</button>
+
+      <button class="record-btn" id="pattern-record-btn" onclick="togglePatternRecording()">🎙</button>
+      <div class="rec-label" id="pattern-rec-label">버튼을 눌러 따라 말해보세요 (선택)</div>
+
+      <div id="pattern-score-grid" class="score-grid" style="display:none;">
+        <div class="gauge-card"><div class="gauge-num" id="pattern-score-accuracy">-</div><div class="gauge-label">정확도</div></div>
+        <div class="gauge-card"><div class="gauge-num" id="pattern-score-stress">-</div><div class="gauge-label">강세</div></div>
+        <div class="gauge-card"><div class="gauge-num" id="pattern-score-intonation">-</div><div class="gauge-label">억양</div></div>
+        <div class="gauge-card"><div class="gauge-num" id="pattern-score-speed">-</div><div class="gauge-label">속도(WPM)</div></div>
+      </div>
+      <div id="pattern-mic-diff" style="text-align:center; font-size:16px; line-height:1.8; margin:12px 0;"></div>
+
+      <button class="btn btn-primary" style="margin-top:14px;" onclick="nextPatternStep()" id="pattern-next-btn">다음으로</button>
+    </div>
+
+    <div id="pattern-step-5" style="display:none;">
+      <p style="font-size:13px; color:var(--ink-soft); margin-bottom:10px;">배운 패턴을 활용해 나만의 문장을 만들어보세요.</p>
+      <textarea id="pattern-own-sentence" rows="3" placeholder="예: I'm the one who fixed the bug yesterday."></textarea>
+      <button class="btn btn-primary" style="margin-top:10px;" onclick="submitPatternSentence()">AI 첨삭 받기</button>
+      <div id="pattern-loading" class="loading-dots" style="display:none;"><span></span><span></span><span></span></div>
+      <div id="pattern-result" style="margin-top:12px;"></div>
+      <button class="btn btn-primary" id="pattern-complete-btn" style="display:none; margin-top:12px;" onclick="completeMission('pattern')">완료하고 홈으로</button>
+    </div>
+  </div>
+
+  <!-- ============ DIARY ============ -->
+  <div class="screen" id="screen-diary">
+    <button class="back-btn" onclick="go('home')">‹ 홈으로</button>
+    <h2 style="margin:0 0 4px;">영어일기</h2>
+    <p style="color:var(--ink-soft); font-size:13.5px; margin:0 0 16px;">오늘 있었던 일을 영어로 자유롭게 적어보세요. (3문장 이상 권장)</p>
+
+    <textarea id="diary-input" rows="7" placeholder="Today, I..."></textarea>
+    <div style="text-align:right; font-size:12px; color:var(--ink-soft); margin-top:4px;"><span id="diary-word-count">0</span> words</div>
+
+    <button class="btn btn-primary" style="margin-top:12px;" onclick="submitDiary()">AI 첨삭 받기</button>
+
+    <div id="diary-loading" class="loading-dots" style="display:none;"><span></span><span></span><span></span></div>
+    <div id="diary-loading-text" class="loading-text" style="display:none;">AI가 문법과 표현을 분석하고 있어요...</div>
+
+    <div id="diary-result" style="display:none; margin-top:16px;"></div>
+  </div>
+
+  <div class="bottom-nav" style="display:none;">
+    <button class="nav-item active" data-nav="home" onclick="go('home')"><span class="nav-icon">🏠</span>홈</button>
+    <button class="nav-item" data-nav="shadowing" onclick="go('shadowing')"><span class="nav-icon">🗣️</span>학습</button>
+    <button class="nav-item" data-nav="report" onclick="showToast('리포트 화면은 다음 버전에서 제공됩니다 📊')"><span class="nav-icon">📈</span>리포트</button>
+    <button class="nav-item" data-nav="me" onclick="showToast('마이페이지는 다음 버전에서 제공됩니다 🙂')"><span class="nav-icon">👤</span>마이</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+/* ================= AUTH & STATE ================= */
+let authToken = null;
+let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, diary:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3, dayCount:1 };
+let authMode = 'login';
+
+function switchAuthTab(mode){
+  authMode = mode;
+  document.getElementById('auth-tab-login').style.background = mode==='login' ? 'var(--ink)' : 'var(--paper)';
+  document.getElementById('auth-tab-login').style.color = mode==='login' ? '#fff' : 'var(--ink)';
+  document.getElementById('auth-tab-signup').style.background = mode==='signup' ? 'var(--ink)' : 'var(--paper)';
+  document.getElementById('auth-tab-signup').style.color = mode==='signup' ? '#fff' : 'var(--ink)';
+  document.getElementById('auth-submit-btn').textContent = mode==='login' ? '로그인' : '회원가입';
+  document.getElementById('auth-error').style.display = 'none';
 }
 
-const DAILY_LIMIT = 3;
+async function submitAuth(){
+  const username = document.getElementById('auth-username').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.style.display = 'none';
 
-const DATA_DIR = path.join(__dirname, 'data');
-const DB_PATH = path.join(DATA_DIR, 'db.json');
+  if(!username || !password){
+    errEl.textContent = '아이디와 비밀번호를 입력해주세요.';
+    errEl.style.display = 'block';
+    return;
+  }
 
-function readDB() {
-  try {
-    if (!fs.existsSync(DB_PATH)) return { users: {} };
-    const raw = fs.readFileSync(DB_PATH, 'utf8');
+  document.getElementById('auth-loading').style.display = 'flex';
+  document.getElementById('auth-submit-btn').disabled = true;
+
+  try{
+    const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+    const res = await fetch(endpoint, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if(!res.ok){
+      throw new Error(data.error || '요청에 실패했어요.');
+    }
+    authToken = data.token;
+    localStorage.setItem('talkpro-token', authToken);
+    applyUserState(data.user);
+    goPostAuth();
+  }catch(e){
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
+  document.getElementById('auth-loading').style.display = 'none';
+  document.getElementById('auth-submit-btn').disabled = false;
+}
+
+function applyUserState(user){
+  state.level = user.level;
+  state.levelChosen = user.levelChosen;
+  state.xp = user.xp;
+  state.streak = user.streak;
+  state.completed = user.completed;
+  state.usage = user.usage;
+  state.dailyLimit = user.dailyLimit || 3;
+  state.dayCount = user.dayCount || 1;
+}
+
+function goPostAuth(){
+  if(!state.levelChosen){
+    renderLevelSelectScreen();
+    go('level-select');
+  }else{
+    enterHome();
+  }
+}
+
+function enterHome(){
+  renderHomeStats();
+  renderLevelSelector();
+  initShadowSentence();
+  initPattern();
+  updateUsagePills();
+  go('home');
+}
+
+function logout(){
+  authToken = null;
+  localStorage.removeItem('talkpro-token');
+  document.getElementById('auth-username').value = '';
+  document.getElementById('auth-password').value = '';
+  switchAuthTab('login');
+  go('login');
+}
+
+// 인증이 필요한 API 호출 공용 헬퍼. 토큰 만료 시 자동으로 로그인 화면으로 되돌린다.
+async function authFetch(url, options={}){
+  const headers = Object.assign({}, options.headers, {
+    'Content-Type':'application/json',
+    'Authorization': 'Bearer ' + authToken
+  });
+  const res = await fetch(url, Object.assign({}, options, { headers }));
+  if(res.status === 401){
+    showToast('세션이 만료됐어요. 다시 로그인해주세요.');
+    logout();
+    throw new Error('세션 만료');
+  }
+  return res;
+}
+
+async function checkExistingSession(){
+  authToken = localStorage.getItem('talkpro-token');
+  if(!authToken){
+    go('login');
+    return;
+  }
+  try{
+    const res = await authFetch('/api/me');
+    if(!res.ok) throw new Error('세션 확인 실패');
+    const data = await res.json();
+    applyUserState(data.user);
+    goPostAuth();
+  }catch(e){
+    logout();
+  }
+}
+
+/* ================= LEVEL SELECT (온보딩) ================= */
+function renderLevelSelectScreen(){
+  const container = document.getElementById('level-select-list');
+  container.innerHTML = '';
+  for(let i=1;i<=6;i++){
+    const card = document.createElement('div');
+    card.className = 'card mission-card';
+    card.style.cursor = 'pointer';
+    card.dataset.level = i;
+    if(state.level === i){
+      card.style.borderColor = 'var(--teal)';
+      card.style.background = '#F0FBFA';
+    }
+    card.innerHTML = `
+      <div class="mission-icon" style="background:#E5F5F3;">Lv.${i}</div>
+      <div>
+        <p class="mission-title">${LEVELS[i].name}</p>
+        <p class="mission-sub">${LEVELS[i].cefr}</p>
+      </div>
+      <div class="chev">${state.level===i ? '✓' : '›'}</div>
+    `;
+    card.onclick = ()=>{
+      state.level = i;
+      renderLevelSelectScreen();
+    };
+    container.appendChild(card);
+  }
+}
+async function confirmLevelSelect(){
+  try{
+    const res = await authFetch('/api/me/level', { method:'POST', body: JSON.stringify({ level: state.level }) });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || '레벨 저장에 실패했어요.');
+    applyUserState(data.user);
+    enterHome();
+  }catch(e){
+    showToast(e.message);
+  }
+}
+
+/* ================= HOME STATS & MISSIONS ================= */
+function renderHomeStats(){
+  document.getElementById('streak-count').textContent = state.streak;
+  document.getElementById('xp-count').textContent = state.xp;
+  document.getElementById('day-count-display').textContent = (state.dayCount||1).toLocaleString('ko-KR') + '일차';
+  const doneCount = Object.values(state.completed).filter(Boolean).length;
+  document.getElementById('today-progress-text').textContent = doneCount + '/4 완료';
+  document.getElementById('today-progress-bar').style.width = (doneCount/4*100) + '%';
+}
+function updateUsagePills(){
+  const sPill = document.getElementById('shadow-usage-pill');
+  const dPill = document.getElementById('dict-usage-pill');
+  if(sPill) sPill.textContent = (state.usage.shadowing||0) + '/' + state.dailyLimit;
+  if(dPill) dPill.textContent = (state.usage.dictation||0) + '/' + state.dailyLimit;
+}
+async function syncProgress(){
+  try{
+    await authFetch('/api/me/progress', {
+      method:'POST',
+      body: JSON.stringify({ xp: state.xp, streak: state.streak, completed: state.completed })
+    });
+  }catch(e){ /* authFetch already handles session expiry */ }
+}
+async function completeMission(type){
+  if(!state.completed[type]){
+    state.completed[type] = true;
+    state.xp += 20;
+    const doneCount = Object.values(state.completed).filter(Boolean).length;
+    if(doneCount === 1) state.streak += 1;
+    await syncProgress();
+    showToast('+20 XP 획득! 🎉');
+  }
+  renderHomeStats();
+  go('home');
+}
+
+// 쉐도잉/딕테이션 하루 3개 제한 체크+소모. 서버가 최종 판단하며, 결과를 로컬 state.usage에도 반영한다.
+async function useDailyCredit(type){
+  try{
+    const res = await authFetch('/api/usage/increment', { method:'POST', body: JSON.stringify({ type }) });
+    const data = await res.json();
+    state.usage[type] = data.limit - data.remaining;
+    updateUsagePills();
+    return data.allowed;
+  }catch(e){
+    return false;
+  }
+}
+
+/* ================= NAV ================= */
+// 쉐도잉/딕테이션: 채점 결과가 나온 후 자동으로 다음 문장으로 넘어가기 위한 카운트다운 타이머
+let autoAdvanceTimers = {};
+function clearAutoAdvance(key){
+  if(autoAdvanceTimers[key]){
+    clearInterval(autoAdvanceTimers[key]);
+    autoAdvanceTimers[key] = null;
+  }
+}
+function startAutoAdvance(key, seconds, onDone, labelElId){
+  clearAutoAdvance(key);
+  let remaining = seconds;
+  const labelEl = document.getElementById(labelElId);
+  function render(){
+    if(labelEl) labelEl.textContent = remaining > 0 ? (remaining + '초 후 다음 문장으로 자동 이동') : '다음 문장으로 이동 중...';
+  }
+  render();
+  autoAdvanceTimers[key] = setInterval(()=>{
+    remaining -= 1;
+    render();
+    if(remaining <= 0){
+      clearAutoAdvance(key);
+      onDone();
+    }
+  }, 1000);
+}
+
+function go(screen){
+  clearAutoAdvance('shadow');
+  clearAutoAdvance('dict');
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+screen).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const navMap = {home:'home', shadowing:'shadowing', dictation:'shadowing', pattern:'shadowing', diary:'shadowing'};
+  const navEl = document.querySelector('[data-nav="'+(navMap[screen]||'home')+'"]');
+  if(navEl) navEl.classList.add('active');
+  document.querySelector('.bottom-nav').style.display = (screen==='login' || screen==='level-select') ? 'none' : 'flex';
+  window.scrollTo(0,0);
+
+  if(screen==='shadowing'){
+    const reached = (state.usage.shadowing||0) >= state.dailyLimit;
+    document.getElementById('shadow-limit-reached').style.display = reached ? 'block' : 'none';
+    document.getElementById('shadow-main-content').style.display = reached ? 'none' : 'block';
+  }
+  if(screen==='dictation'){
+    const reached = (state.usage.dictation||0) >= state.dailyLimit;
+    document.getElementById('dict-limit-reached').style.display = reached ? 'block' : 'none';
+    document.getElementById('dict-main-content').style.display = reached ? 'none' : 'block';
+  }
+}
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ================= AI HELPER ================= */
+async function callClaude(systemPrompt, userPrompt){
+  // 프론트엔드는 API 키를 절대 갖지 않는다. 우리 서버(server.js)의 /api/ai로만 요청하며, 로그인 토큰을 함께 보낸다.
+  let response;
+  try{
+    response = await authFetch("/api/ai", {
+      method: "POST",
+      body: JSON.stringify({ system: systemPrompt, prompt: userPrompt })
+    });
+  }catch(networkErr){
+    throw new Error(networkErr.message || '서버에 연결할 수 없어요. 인터넷 연결을 확인해주세요.');
+  }
+  if(!response.ok){
+    const err = await response.json().catch(()=>({error:'서버 오류 (' + response.status + ')'}));
+    throw new Error(err.error || ('AI 요청 실패 (' + response.status + ')'));
+  }
+  const data = await response.json();
+  if(!data.text){
+    throw new Error('AI가 빈 응답을 반환했어요. 다시 시도해주세요.');
+  }
+  return data.text.replace(/```json|```/g, "").trim();
+}
+
+// AI가 JSON 앞뒤에 다른 설명 텍스트를 붙여 응답해도 최대한 파싱해낸다.
+function safeJsonParse(raw){
+  try{
     return JSON.parse(raw);
-  } catch (e) {
-    console.error('DB 읽기 오류:', e);
-    return { users: {} };
-  }
-}
-function writeDB(db) {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
-}
-
-function todayKST() {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
-function hashPassword(password, salt) {
-  return crypto.scryptSync(password, salt, 64).toString('hex');
-}
-function verifyPassword(password, salt, expectedHash) {
-  const hash = hashPassword(password, salt);
-  const a = Buffer.from(hash, 'hex');
-  const b = Buffer.from(expectedHash, 'hex');
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
-}
-
-function createToken(username) {
-  const exp = Date.now() + 1000 * 60 * 60 * 24 * 30;
-  const payload = `${username}:${exp}`;
-  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
-  return Buffer.from(payload).toString('base64') + '.' + sig;
-}
-function verifyToken(token) {
-  if (!token) return null;
-  const parts = token.split('.');
-  if (parts.length !== 2) return null;
-  const [payloadB64, sig] = parts;
-  let payload;
-  try { payload = Buffer.from(payloadB64, 'base64').toString('utf8'); } catch (e) { return null; }
-  const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expectedSig);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  const [username, expStr] = payload.split(':');
-  if (Date.now() > parseInt(expStr, 10)) return null;
-  return username;
-}
-
-function defaultUserState() {
-  return {
-    level: 3,
-    levelChosen: false,
-    xp: 0,
-    streak: 0,
-    completed: { shadowing: false, dictation: false, pattern: false, diary: false },
-    usage: { date: todayKST(), shadowing: 0, dictation: 0 }
-  };
-}
-function rollUsageIfNeeded(user) {
-  const today = todayKST();
-  if (!user.usage || user.usage.date !== today) {
-    user.usage = { date: today, shadowing: 0, dictation: 0 };
-    user.completed = { shadowing: false, dictation: false, pattern: false, diary: false };
-  }
-}
-function sanitizeUser(username, user) {
-  return {
-    username,
-    level: user.level,
-    levelChosen: !!user.levelChosen,
-    xp: user.xp,
-    streak: user.streak,
-    completed: user.completed,
-    usage: user.usage,
-    dailyLimit: DAILY_LIMIT
-  };
-}
-
-function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  const username = verifyToken(token);
-  if (!username) {
-    return res.status(401).json({ error: '로그인이 필요하거나 세션이 만료됐어요. 다시 로그인해주세요.' });
-  }
-  const db = readDB();
-  if (!db.users[username]) {
-    return res.status(401).json({ error: '계정을 찾을 수 없어요. 다시 로그인해주세요.' });
-  }
-  req.username = username;
-  req.db = db;
-  next();
-}
-
-app.use(cors());
-app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.post('/api/auth/signup', (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) {
-    return res.status(400).json({ error: '아이디와 비밀번호를 입력해주세요.' });
-  }
-  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
-    return res.status(400).json({ error: '아이디는 영문/숫자/밑줄만 사용해 3~20자로 입력해주세요.' });
-  }
-  if (password.length < 4) {
-    return res.status(400).json({ error: '비밀번호는 4자 이상이어야 해요.' });
-  }
-
-  const db = readDB();
-  if (db.users[username]) {
-    return res.status(409).json({ error: '이미 사용 중인 아이디예요.' });
-  }
-
-  const salt = crypto.randomBytes(16).toString('hex');
-  const passwordHash = hashPassword(password, salt);
-  db.users[username] = { salt, passwordHash, ...defaultUserState() };
-  writeDB(db);
-
-  res.json({ token: createToken(username), user: sanitizeUser(username, db.users[username]) });
-});
-
-app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) {
-    return res.status(400).json({ error: '아이디와 비밀번호를 입력해주세요.' });
-  }
-  const db = readDB();
-  const user = db.users[username];
-  if (!user || !verifyPassword(password, user.salt, user.passwordHash)) {
-    return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않아요.' });
-  }
-  rollUsageIfNeeded(user);
-  writeDB(db);
-  res.json({ token: createToken(username), user: sanitizeUser(username, user) });
-});
-
-app.get('/api/me', requireAuth, (req, res) => {
-  const user = req.db.users[req.username];
-  rollUsageIfNeeded(user);
-  writeDB(req.db);
-  res.json({ user: sanitizeUser(req.username, user) });
-});
-
-app.post('/api/me/level', requireAuth, (req, res) => {
-  const { level } = req.body || {};
-  if (!Number.isInteger(level) || level < 1 || level > 6) {
-    return res.status(400).json({ error: '레벨은 1~6 사이 숫자여야 해요.' });
-  }
-  const user = req.db.users[req.username];
-  user.level = level;
-  user.levelChosen = true;
-  writeDB(req.db);
-  res.json({ user: sanitizeUser(req.username, user) });
-});
-
-app.post('/api/me/progress', requireAuth, (req, res) => {
-  const { xp, streak, completed } = req.body || {};
-  const user = req.db.users[req.username];
-  if (typeof xp === 'number') user.xp = xp;
-  if (typeof streak === 'number') user.streak = streak;
-  if (completed && typeof completed === 'object') user.completed = { ...user.completed, ...completed };
-  writeDB(req.db);
-  res.json({ user: sanitizeUser(req.username, user) });
-});
-
-app.post('/api/usage/increment', requireAuth, (req, res) => {
-  const { type } = req.body || {};
-  if (type !== 'shadowing' && type !== 'dictation') {
-    return res.status(400).json({ error: 'type은 shadowing 또는 dictation이어야 해요.' });
-  }
-  const user = req.db.users[req.username];
-  rollUsageIfNeeded(user);
-  if (user.usage[type] >= DAILY_LIMIT) {
-    writeDB(req.db);
-    return res.json({ allowed: false, remaining: 0, limit: DAILY_LIMIT });
-  }
-  user.usage[type] += 1;
-  writeDB(req.db);
-  res.json({ allowed: true, remaining: DAILY_LIMIT - user.usage[type], limit: DAILY_LIMIT });
-});
-
-app.post('/api/ai', requireAuth, async (req, res) => {
-  if (!ANTHROPIC_API_KEY) {
-    return res.status(500).json({
-      error: 'ANTHROPIC_API_KEY가 서버에 설정되어 있지 않습니다. .env 파일 또는 배포 환경변수를 확인하세요.'
-    });
-  }
-
-  const { system, prompt } = req.body || {};
-  if (!prompt) {
-    return res.status(400).json({ error: 'prompt가 필요합니다.' });
-  }
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 1000,
-        system: system || undefined,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Anthropic API error:', response.status, errText);
-      let detail = errText;
-      try {
-        const parsed = JSON.parse(errText);
-        detail = (parsed.error && parsed.error.message) || errText;
-      } catch (_) { /* errText was not JSON, use as-is */ }
-      return res.status(502).json({
-        error: `AI 서비스 호출에 실패했습니다 (HTTP ${response.status}): ${detail}`
-      });
+  }catch(e){
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if(start !== -1 && end !== -1 && end > start){
+      return JSON.parse(raw.slice(start, end+1));
     }
+    throw e;
+  }
+}
 
-    const data = await response.json();
-    const text = (data.content || [])
-      .map((block) => block.text || '')
-      .filter(Boolean)
-      .join('\n');
+/* ================= LEVEL CONTENT (Lv.1~6) ================= */
+const LEVELS = {
+  1: { name:"Lv.1 입문", cefr:"CEFR A1",
+    shadow:[
+      {en:"I am a student.", ko:"나는 학생이다."},
+      {en:"This is my book.", ko:"이것은 내 책이다."},
+      {en:"I like pizza.", ko:"나는 피자를 좋아한다."}
+    ],
+    dict:[
+      {en:"My name is Anna.", ko:"내 이름은 애나다."},
+      {en:"I have a cat.", ko:"나는 고양이가 있다."},
+      {en:"She is my friend.", ko:"그녀는 내 친구다."}
+    ],
+    pattern:["I like...","I like pizza.","I like pizza and pasta."]
+  },
+  2: { name:"Lv.2 초급", cefr:"CEFR A2",
+    shadow:[
+      {en:"I usually wake up at seven.", ko:"나는 보통 7시에 일어난다."},
+      {en:"Can you help me with this?", ko:"이거 좀 도와줄 수 있어?"},
+      {en:"I'm going to the store later.", ko:"나는 이따가 가게에 갈 거야."}
+    ],
+    dict:[
+      {en:"What time does the movie start?", ko:"영화가 몇 시에 시작해?"},
+      {en:"I need to buy some groceries.", ko:"나는 식료품을 좀 사야 해."},
+      {en:"He works at a hospital.", ko:"그는 병원에서 일한다."}
+    ],
+    pattern:["I want to...","I want to learn English.","I want to learn English this year."]
+  },
+  3: { name:"Lv.3 초중급", cefr:"CEFR A2-B1",
+    shadow:[
+      {en:"I'm the one who called you yesterday.", ko:"어제 너한테 전화한 사람이 나야."},
+      {en:"She's the kind of person who never gives up.", ko:"그녀는 절대 포기하지 않는 스타일의 사람이야."},
+      {en:"I can't believe you actually did that.", ko:"네가 진짜 그걸 했다니 믿을 수가 없어."}
+    ],
+    dict:[
+      {en:"I would have called you if I had known.", ko:"알았더라면 너한테 전화했을 텐데."},
+      {en:"We should have left earlier.", ko:"우리는 더 일찍 떠났어야 했어."},
+      {en:"He's been working here for five years.", ko:"그는 여기서 5년째 일하고 있어."}
+    ],
+    pattern:["I'm the one who...","I'm the one who called you.","I'm the one who called you yesterday."]
+  },
+  4: { name:"Lv.4 중급", cefr:"CEFR B1",
+    shadow:[
+      {en:"I think we should reconsider the plan.", ko:"우리 계획을 다시 생각해봐야 할 것 같아."},
+      {en:"It's important to stay focused on our goals.", ko:"우리 목표에 집중하는 게 중요해."},
+      {en:"I was wondering if you could help me out.", ko:"혹시 나 좀 도와줄 수 있을까 해서."}
+    ],
+    dict:[
+      {en:"In my opinion, this is the best solution.", ko:"내 생각엔 이게 최선의 해결책이야."},
+      {en:"I've been meaning to ask you something.", ko:"너한테 물어보고 싶은 게 있었어."},
+      {en:"The meeting has been postponed until next week.", ko:"회의가 다음 주로 미뤄졌어."}
+    ],
+    pattern:["What I really need is...","What I really need is more time.","What I really need is more time to finish this properly."]
+  },
+  5: { name:"Lv.5 중고급", cefr:"CEFR B1-B2",
+    shadow:[
+      {en:"Honestly, I couldn't care less about that.", ko:"솔직히 난 그거 전혀 신경 안 써."},
+      {en:"It just so happens that I know the answer.", ko:"마침 내가 답을 알고 있어."},
+      {en:"The more I think about it, the less sense it makes.", ko:"생각하면 할수록 더 말이 안 돼."}
+    ],
+    dict:[
+      {en:"If I were in your shoes, I'd probably do the same.", ko:"내가 네 입장이었어도 아마 똑같이 했을 거야."},
+      {en:"There's no way I would have agreed to that.", ko:"내가 그거에 동의했을 리가 없어."},
+      {en:"It's not that I don't care, it's just complicated.", ko:"신경 안 쓰는 게 아니라 그냥 복잡한 거야."}
+    ],
+    pattern:["The thing is...","The thing is, I never actually agreed to this.","The thing is, I never actually agreed to this in the first place."]
+  },
+  6: { name:"Lv.6 고급", cefr:"CEFR B2-C1",
+    shadow:[
+      {en:"I wouldn't go so far as to say it was a failure.", ko:"그걸 실패라고까지 말하진 않을 거야."},
+      {en:"There's more to this story than meets the eye.", ko:"이 이야기엔 겉보기보다 더 많은 게 있어."},
+      {en:"We need to address the elephant in the room.", ko:"우리는 모두가 회피하는 그 문제를 짚고 넘어가야 해."}
+    ],
+    dict:[
+      {en:"Given the circumstances, I think we made the right call.", ko:"상황을 고려하면, 우리가 옳은 결정을 내린 것 같아."},
+      {en:"It's a slippery slope once you start making exceptions.", ko:"예외를 만들기 시작하면 걷잡을 수 없게 돼."},
+      {en:"At the end of the day, results speak louder than words.", ko:"결국엔 결과가 말보다 더 중요해."}
+    ],
+    pattern:["What strikes me is...","What strikes me is how quickly things changed.","What strikes me is how quickly things changed once we committed to the plan."]
+  }
+};
 
-    if (!text) {
-      console.warn('Anthropic API returned no text content:', JSON.stringify(data));
-      return res.status(502).json({ error: 'AI가 빈 응답을 반환했습니다. 다시 시도해주세요.' });
+function currentLevelData(){ return LEVELS[state.level || 3]; }
+
+function renderLevelSelector(){
+  const row = document.getElementById('level-chip-row');
+  row.innerHTML = '';
+  for(let i=1;i<=6;i++){
+    const chip = document.createElement('div');
+    chip.className = 'level-chip' + (state.level===i ? ' active':'');
+    chip.textContent = 'Lv.'+i;
+    chip.onclick = ()=>selectLevel(i);
+    row.appendChild(chip);
+  }
+  document.getElementById('level-name-display').textContent = currentLevelData().name;
+  document.getElementById('level-cefr-display').textContent = currentLevelData().cefr;
+}
+
+async function selectLevel(n){
+  if(state.level === n) return;
+  state.level = n;
+  try{
+    const res = await authFetch('/api/me/level', { method:'POST', body: JSON.stringify({ level: n }) });
+    const data = await res.json();
+    if(res.ok) applyUserState(data.user);
+  }catch(e){ /* authFetch handles session expiry */ }
+  renderLevelSelector();
+  // 레벨이 바뀌면 각 학습 화면의 진행 상태를 초기화
+  shadowIndex = 0; initShadowSentence();
+  dictIndex = 0;
+  patternStepIndex = 0; initPattern();
+  showToast(currentLevelData().name + ' 콘텐츠로 전환했어요');
+}
+
+/* ================= SHADOWING ================= */
+let shadowIndex = 0;
+let shadowRate = 1.0;
+let shadowRecognizing = false;
+let shadowRecordStart = 0;
+let shadowRecognition = null;
+let shadowCreditConsumedForCurrent = false;
+
+function initShadowSentence(){
+  const list = currentLevelData().shadow;
+  document.getElementById('shadow-sentence-en').textContent = list[shadowIndex].en;
+  document.getElementById('shadow-sentence-ko').textContent = list[shadowIndex].ko;
+  document.getElementById('shadow-result').style.display = 'none';
+  shadowCreditConsumedForCurrent = false;
+  clearAutoAdvance('shadow');
+}
+function setShadowRate(rate, el){
+  shadowRate = rate;
+  document.querySelectorAll('#screen-shadowing .speed-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+}
+// 공용 TTS 함수: 안드로이드(특히 삼성인터넷 등)에서 speak()가 조용히 실패하는 문제를 최대한 방어한다.
+let currentUtterance = null; // 일부 브라우저는 참조가 사라지면(GC) 발화 중간에 소리가 끊기므로 전역에 유지
+let voicesReady = false;
+
+function primeVoices(){
+  if(!('speechSynthesis' in window)) return;
+  const voices = speechSynthesis.getVoices();
+  if(voices.length > 0) voicesReady = true;
+  speechSynthesis.onvoiceschanged = ()=>{ voicesReady = true; };
+}
+
+function speakText(text, rate){
+  if(!('speechSynthesis' in window)){
+    showToast('이 브라우저는 음성 재생을 지원하지 않아요. Chrome 브라우저를 사용해주세요.');
+    return;
+  }
+  speechSynthesis.cancel();
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'en-US';
+  utter.rate = rate;
+
+  // 영어 음성이 따로 있으면 명시적으로 지정 (일부 안드로이드 기기는 지정 안 하면 무음으로 실패함)
+  const voices = speechSynthesis.getVoices();
+  const enVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+  if(enVoice) utter.voice = enVoice;
+
+  let started = false;
+  utter.onstart = ()=>{ started = true; };
+  utter.onerror = (e)=>{
+    console.error('TTS error:', e);
+    showToast('음성 재생에 실패했어요. Chrome 브라우저로 열어보세요 🔊');
+  };
+
+  currentUtterance = utter;
+  speechSynthesis.speak(utter);
+
+  // 삼성인터넷 등 일부 브라우저는 에러 이벤트조차 없이 그냥 무음일 수 있어, 일정 시간 내 시작 안 하면 안내
+  setTimeout(()=>{
+    if(!started){
+      showToast('소리가 안 들리면 Chrome 브라우저로 열어보세요 🔊 (삼성인터넷 등 일부 브라우저는 음성 재생이 제한돼요)');
     }
+  }, 900);
+}
 
-    res.json({ text });
-  } catch (err) {
-    console.error('Server error calling Anthropic API:', err);
-    res.status(500).json({ error: '서버 오류가 발생했습니다.' });
+function playShadowSentence(){
+  speakText(currentLevelData().shadow[shadowIndex].en, shadowRate);
+}
+function resetShadowing(){
+  const list = currentLevelData().shadow;
+  shadowIndex = (shadowIndex+1) % list.length;
+  initShadowSentence();
+}
+function advanceShadowingOrFinish(){
+  if((state.usage.shadowing||0) >= state.dailyLimit){
+    completeMission('shadowing');
+  } else {
+    resetShadowing();
+  }
+}
+function skipToNextShadow(){
+  clearAutoAdvance('shadow');
+  advanceShadowingOrFinish();
+}
+
+const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function micErrorMessage(errCode){
+  const map = {
+    'not-allowed': '마이크 권한이 거부됐어요. 브라우저 주소창 왼쪽 자물쇠 아이콘에서 마이크 권한을 허용해주세요.',
+    'permission-denied': '마이크 권한이 거부됐어요. 브라우저 설정에서 마이크 권한을 허용해주세요.',
+    'no-speech': '음성이 감지되지 않았어요. 다시 눌러서 말해보세요.',
+    'audio-capture': '마이크를 찾을 수 없어요. 마이크가 연결되어 있는지 확인해주세요.',
+    'network': '음성인식 서버에 연결할 수 없어요. 카카오톡 등 인앱 브라우저가 아닌 Chrome 브라우저로 열어주세요.',
+    'service-not-allowed': '이 브라우저에서는 음성인식이 차단되어 있어요. Chrome 브라우저로 열어주세요.',
+    'aborted': '녹음이 중단됐어요. 다시 시도해주세요.'
+  };
+  return map[errCode] || ('음성인식 오류가 발생했어요 (' + errCode + '). Chrome 브라우저에서 다시 시도해주세요.');
+}
+
+// 마이크 권한을 명시적으로 먼저 요청해서, 브라우저가 권한 프롬프트를 확실히 띄우게 한다.
+async function ensureMicPermission(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    throw new Error('이 브라우저는 마이크 접근을 지원하지 않아요.');
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  stream.getTracks().forEach(t => t.stop()); // 권한 확인용이므로 바로 해제
+}
+
+// 브라우저가 아직 마이크 권한을 물어본 적 없는 상태(prompt)라면, 팝업이 뜨기 전에 미리 안내 문구를 보여준다.
+async function checkMicPermissionState(){
+  if(navigator.permissions && navigator.permissions.query){
+    try{
+      const status = await navigator.permissions.query({ name: 'microphone' });
+      return status.state; // 'granted' | 'denied' | 'prompt'
+    }catch(e){ return 'unknown'; }
+  }
+  return 'unknown';
+}
+
+// 녹음 시작 전 공통 처리: 권한 상태에 따라 안내 문구를 먼저 보여주고 진행한다.
+async function prepareMicUI(labelEl){
+  const state = await checkMicPermissionState();
+  if(state === 'denied'){
+    labelEl.textContent = '마이크 권한이 차단되어 있어요. 주소창 왼쪽 자물쇠 아이콘 → 마이크 → 허용으로 바꾼 뒤 새로고침해주세요.';
+    return false;
+  }
+  if(state === 'granted'){
+    labelEl.textContent = '마이크 준비 중...';
+  } else {
+    labelEl.textContent = '🎙 잠시 후 마이크 권한 팝업이 뜨면 [허용]을 눌러주세요';
+    showToast('마이크 권한 팝업이 뜨면 "허용"을 눌러주세요 🎙');
+  }
+  return true;
+}
+
+// 재사용 가능한 음성인식 실행기: 성공 시 onResult(transcript, durationSec), 실패 시 onError(message) 호출
+function startRecognition(onResult, onError, onStart, onStop){
+  if(!SpeechRecognitionAPI){
+    onError('이 브라우저는 음성인식을 지원하지 않아요. 데스크탑 Chrome 브라우저를 사용해주세요.');
+    return null;
+  }
+  const recognition = new SpeechRecognitionAPI();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  const startTime = Date.now();
+
+  ensureMicPermission().then(()=>{
+    recognition.onresult = (event)=>{
+      const transcript = event.results[0][0].transcript;
+      onResult(transcript, (Date.now()-startTime)/1000);
+    };
+    recognition.onerror = (e)=>{ onError(micErrorMessage(e.error)); };
+    recognition.onend = ()=>{ if(onStop) onStop(); };
+    try{
+      recognition.start();
+      if(onStart) onStart();
+    }catch(err){
+      onError('녹음을 시작할 수 없어요. 잠시 후 다시 시도해주세요. (' + err.message + ')');
+    }
+  }).catch((err)=>{
+    onError('마이크 권한을 확인할 수 없어요: ' + (err.message || err.name || '알 수 없는 오류'));
+  });
+
+  return recognition;
+}
+
+async function toggleShadowRecording(){
+  if(!SpeechRecognitionAPI){
+    document.getElementById('shadow-mic-banner').style.display = 'block';
+    document.getElementById('shadow-record-area').style.display = 'none';
+    document.getElementById('shadow-manual-input').style.display = 'block';
+    document.getElementById('shadow-manual-submit').style.display = 'block';
+    return;
+  }
+  if(shadowRecognizing){ shadowRecognition.stop(); return; }
+
+  const canProceed = await prepareMicUI(document.getElementById('shadow-rec-label'));
+  if(!canProceed) return;
+
+  shadowRecognition = startRecognition(
+    (transcript, duration)=>{
+      scoreShadowing(transcript, duration);
+    },
+    (message)=>{
+      shadowRecognizing = false;
+      document.getElementById('shadow-record-btn').classList.remove('recording');
+      document.getElementById('shadow-rec-label').textContent = message;
+    },
+    ()=>{
+      shadowRecognizing = true;
+      document.getElementById('shadow-record-btn').classList.add('recording');
+      document.getElementById('shadow-rec-label').textContent = '듣고 있어요... 말을 마치면 자동으로 멈춰요';
+    },
+    ()=>{
+      shadowRecognizing = false;
+      document.getElementById('shadow-record-btn').classList.remove('recording');
+    }
+  );
+}
+
+function normalizeWords(str){
+  return str.toLowerCase().replace(/[.,!?']/g,'').trim().split(/\s+/);
+}
+// 쉐도잉/패턴학습 공용 발음 분석 함수: 정확도(실측) + 강세/억양(데모용 추정치) + 속도(WPM, 실측)
+function computeSpeechScore(targetSentence, transcript, durationSec){
+  const target = normalizeWords(targetSentence);
+  const said = normalizeWords(transcript);
+  let matches = 0;
+  const diffHtml = target.map((w)=>{
+    const isMatch = said.includes(w);
+    if(isMatch) matches++;
+    return '<span class="word '+(isMatch?'match':'miss')+'">'+w+'</span>';
+  }).join(' ');
+  const accuracy = Math.round((matches/target.length)*100);
+  const wpm = Math.max(1, Math.round((said.length / durationSec) * 60));
+  // 강세/억양은 데모용 추정치: 정확도를 기반으로 약간의 변주를 준 시뮬레이션 값
+  const stress = Math.min(100, Math.max(40, accuracy - 5 + Math.floor(Math.random()*10)));
+  const intonation = Math.min(100, Math.max(40, accuracy - 8 + Math.floor(Math.random()*12)));
+  return { accuracy, stress, intonation, wpm, diffHtml };
+}
+
+function scoreShadowManual(){
+  const val = document.getElementById('shadow-manual-input').value;
+  scoreShadowing(val, 4);
+}
+async function scoreShadowing(transcript, durationSec){
+  if(!shadowCreditConsumedForCurrent){
+    const allowed = await useDailyCredit('shadowing');
+    if(!allowed){
+      document.getElementById('shadow-limit-reached').style.display = 'block';
+      document.getElementById('shadow-main-content').style.display = 'none';
+      showToast('오늘의 쉐도잉 학습 3개를 모두 사용했어요 🌙');
+      return;
+    }
+    shadowCreditConsumedForCurrent = true;
+  }
+
+  const targetSentence = currentLevelData().shadow[shadowIndex].en;
+  const { accuracy, stress, intonation, wpm, diffHtml } = computeSpeechScore(targetSentence, transcript, durationSec);
+
+  document.getElementById('score-accuracy').textContent = accuracy+'%';
+  document.getElementById('score-stress').textContent = stress+'%';
+  document.getElementById('score-intonation').textContent = intonation+'%';
+  document.getElementById('score-speed').textContent = wpm;
+  document.getElementById('shadow-diff').innerHTML = diffHtml;
+  document.getElementById('shadow-result').style.display = 'block';
+  document.getElementById('shadow-rec-label').textContent = '버튼을 눌러 다시 녹음할 수 있어요';
+}
+
+/* ================= DICTATION ================= */
+let dictIndex = 0;
+let dictRate = 1.0;
+let dictCreditConsumedForCurrent = false;
+function currentDictSentence(){ return currentLevelData().dict[dictIndex]; }
+function setDictRate(rate, el){
+  dictRate = rate;
+  document.querySelectorAll('#screen-dictation .speed-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+}
+function playDictSentence(){
+  speakText(currentDictSentence().en, dictRate);
+}
+function nextDictSentence(){
+  const list = currentLevelData().dict;
+  dictIndex = (dictIndex+1) % list.length;
+  document.getElementById('dict-input-en').value = '';
+  document.getElementById('dict-input-ko').value = '';
+  document.getElementById('dict-result').style.display = 'none';
+  dictCreditConsumedForCurrent = false;
+  clearAutoAdvance('dict');
+}
+async function submitDictation(){
+  const en = document.getElementById('dict-input-en').value.trim();
+  const ko = document.getElementById('dict-input-ko').value.trim();
+  if(!en){ showToast('영어 문장을 입력해주세요'); return; }
+
+  if(!dictCreditConsumedForCurrent){
+    const allowed = await useDailyCredit('dictation');
+    if(!allowed){
+      document.getElementById('dict-limit-reached').style.display = 'block';
+      document.getElementById('dict-main-content').style.display = 'none';
+      showToast('오늘의 딕테이션 학습 3개를 모두 사용했어요 🌙');
+      return;
+    }
+    dictCreditConsumedForCurrent = true;
+  }
+
+  document.getElementById('dict-loading').style.display='flex';
+  document.getElementById('dict-loading-text').style.display='block';
+  document.getElementById('dict-result').style.display='none';
+
+  const sys = `너는 영어 딕테이션 채점 AI다. 학생의 현재 레벨은 ${currentLevelData().name}(${currentLevelData().cefr})이다. 반드시 순수 JSON만 응답하고 다른 텍스트는 절대 포함하지 마라.
+형식: {"score": 0-100 숫자, "spelling_errors": [{"wrong":"","correct":""}], "grammar_note": "간단한 문법/연음/축약형 설명 (한글, 2문장 이내)", "ko_correct": true/false, "praise": "칭찬 한마디 (한글)"}`;
+  const user = `정답 문장: "${currentDictSentence().en}" (뜻: ${currentDictSentence().ko})
+학생이 입력한 영어: "${en}"
+학생이 입력한 한글 뜻: "${ko}"
+위 기준으로 채점해줘.`;
+
+  try{
+    const raw = await callClaude(sys, user);
+    const result = safeJsonParse(raw);
+    renderDictResult(result);
+  }catch(e){
+    console.error('Dictation AI error:', e);
+    document.getElementById('dict-result').innerHTML = '<div class="banner">AI 채점 중 오류가 발생했어요: ' + e.message + '<br><button class="btn btn-secondary" style="margin-top:10px;" onclick="submitDictation()">다시 시도</button></div>';
+    document.getElementById('dict-result').style.display='block';
+  }
+  document.getElementById('dict-loading').style.display='none';
+  document.getElementById('dict-loading-text').style.display='none';
+}
+function advanceDictOrFinish(){
+  if((state.usage.dictation||0) >= state.dailyLimit){
+    completeMission('dictation');
+  } else {
+    nextDictSentence();
+  }
+}
+function skipToNextDict(){
+  clearAutoAdvance('dict');
+  advanceDictOrFinish();
+}
+function renderDictResult(r){
+  let errHtml = r.spelling_errors && r.spelling_errors.length
+    ? r.spelling_errors.map(e=>`<span class="tag" style="color:var(--error); border-color:#f3c8c8;">${e.wrong} → ${e.correct}</span>`).join('')
+    : '<span class="tag" style="color:var(--success);">철자 오류 없음 ✓</span>';
+
+  document.getElementById('dict-result').innerHTML = `
+    <div class="card">
+      <div class="feedback-block">
+        <div class="feedback-title">철자 확인</div>
+        <div>${errHtml}</div>
+      </div>
+      <div class="feedback-block">
+        <div class="feedback-title">문법 · 발음 설명</div>
+        <div style="font-size:14px;">${r.grammar_note}</div>
+      </div>
+      <div class="feedback-block" style="border-left-color:var(--coral);">
+        <div class="feedback-title" style="color:var(--coral-dark);">AI 한마디</div>
+        <div style="font-size:14px;">${r.praise}</div>
+      </div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn btn-primary" onclick="skipToNextDict()">다음 문장으로 →</button>
+      </div>
+      </div>
+    </div>`;
+  document.getElementById('dict-result').style.display='block';
+}
+
+/* ================= PATTERN ================= */
+let patternStepIndex = 0;
+function currentPatternSteps(){ return currentLevelData().pattern; }
+
+function initPattern(){
+  patternStepIndex = 0;
+  document.getElementById('pattern-current-sentence').textContent = currentPatternSteps()[0];
+  document.getElementById('pattern-own-sentence').value = '';
+  document.getElementById('pattern-result').innerHTML = '';
+  document.getElementById('pattern-complete-btn').style.display = 'none';
+  document.getElementById('pattern-mic-diff').innerHTML = '';
+  document.getElementById('pattern-score-grid').style.display = 'none';
+  document.getElementById('pattern-rec-label').textContent = '버튼을 눌러 따라 말해보세요 (선택)';
+  updatePatternDots();
+  goPatternStep(1);
+}
+function updatePatternDots(){
+  const dots = document.querySelectorAll('#pattern-steps .step-dot');
+  dots.forEach((d,i)=>{
+    d.classList.remove('done','current');
+    if(i < currentDotIndex()) d.classList.add('done');
+    else if(i === currentDotIndex()) d.classList.add('current');
+  });
+}
+function currentDotIndex(){
+  if(document.getElementById('pattern-step-5').style.display !== 'none') return 3;
+  return patternStepIndex;
+}
+function playPatternSentence(){
+  speakText(currentPatternSteps()[patternStepIndex], 0.95);
+}
+
+let patternRecognition = null;
+let patternRecognizing = false;
+function togglePatternRecording(){
+  if(!SpeechRecognitionAPI){
+    document.getElementById('pattern-rec-label').textContent = '이 브라우저는 음성인식을 지원하지 않아요. Chrome 브라우저를 사용해주세요.';
+    return;
+  }
+  if(patternRecognizing){ patternRecognition.stop(); return; }
+
+  document.getElementById('pattern-rec-label').textContent = '마이크 준비 중...';
+  document.getElementById('pattern-mic-diff').innerHTML = '';
+  document.getElementById('pattern-score-grid').style.display = 'none';
+
+  patternRecognition = startRecognition(
+    (transcript, duration)=>{
+      const targetSentence = currentPatternSteps()[patternStepIndex];
+      const { accuracy, stress, intonation, wpm, diffHtml } = computeSpeechScore(targetSentence, transcript, duration);
+
+      document.getElementById('pattern-score-accuracy').textContent = accuracy+'%';
+      document.getElementById('pattern-score-stress').textContent = stress+'%';
+      document.getElementById('pattern-score-intonation').textContent = intonation+'%';
+      document.getElementById('pattern-score-speed').textContent = wpm;
+      document.getElementById('pattern-score-grid').style.display = 'grid';
+      document.getElementById('pattern-mic-diff').innerHTML = diffHtml;
+      document.getElementById('pattern-rec-label').textContent = '버튼을 눌러 다시 녹음할 수 있어요';
+    },
+    (message)=>{
+      patternRecognizing = false;
+      document.getElementById('pattern-record-btn').classList.remove('recording');
+      document.getElementById('pattern-rec-label').textContent = message;
+    },
+    ()=>{
+      patternRecognizing = true;
+      document.getElementById('pattern-record-btn').classList.add('recording');
+      document.getElementById('pattern-rec-label').textContent = '듣고 있어요...';
+    },
+    ()=>{
+      patternRecognizing = false;
+      document.getElementById('pattern-record-btn').classList.remove('recording');
+    }
+  );
+}
+function nextPatternStep(){
+  patternStepIndex++;
+  const steps = currentPatternSteps();
+  document.getElementById('pattern-mic-diff').innerHTML = '';
+  document.getElementById('pattern-score-grid').style.display = 'none';
+  document.getElementById('pattern-rec-label').textContent = '버튼을 눌러 따라 말해보세요 (선택)';
+  if(patternStepIndex < steps.length){
+    document.getElementById('pattern-current-sentence').textContent = steps[patternStepIndex];
+    updatePatternDots();
+  } else {
+    goPatternStep(5);
+  }
+}
+function goPatternStep(n){
+  document.getElementById('pattern-step-1-3').style.display = n<=3 ? 'block':'none';
+  document.getElementById('pattern-step-5').style.display = n===5 ? 'block':'none';
+  updatePatternDots();
+}
+async function submitPatternSentence(){
+  const val = document.getElementById('pattern-own-sentence').value.trim();
+  if(!val){ showToast('문장을 먼저 작성해주세요'); return; }
+  document.getElementById('pattern-loading').style.display='flex';
+  document.getElementById('pattern-result').innerHTML='';
+
+  const sys = `너는 영어 작문 첨삭 AI다. 학생의 레벨은 ${currentLevelData().name}(${currentLevelData().cefr})이고, "${currentPatternSteps()[0]}" 패턴을 연습 중이며 이 문장을 응용해서 작문했다.
+반드시 순수 JSON만 응답: {"corrected": "수정된 문장", "explanation": "무엇을 왜 고쳤는지 한글로 2문장 이내", "natural_alt": "더 자연스러운 원어민식 표현 (다르면 제시, 같으면 동일 문장)"}`;
+  try{
+    const raw = await callClaude(sys, `학생 문장: "${val}"`);
+    const r = safeJsonParse(raw);
+    document.getElementById('pattern-result').innerHTML = `
+      <div class="feedback-block">
+        <div class="feedback-title">수정 문장</div>
+        <div style="font-size:15px; font-weight:600;">${r.corrected}</div>
+      </div>
+      <div class="feedback-block">
+        <div class="feedback-title">설명</div>
+        <div style="font-size:14px;">${r.explanation}</div>
+      </div>
+      <div class="feedback-block" style="border-left-color:var(--coral);">
+        <div class="feedback-title" style="color:var(--coral-dark);">원어민이라면 이렇게도 말해요</div>
+        <div style="font-size:14px;">${r.natural_alt}</div>
+      </div>`;
+    document.getElementById('pattern-complete-btn').style.display = 'block';
+  }catch(e){
+    console.error('Pattern correction AI error:', e);
+    document.getElementById('pattern-result').innerHTML = '<div class="banner">첨삭 중 오류가 발생했어요: ' + e.message + '<br><button class="btn btn-secondary" style="margin-top:10px;" onclick="submitPatternSentence()">다시 시도</button></div>';
+  }
+  document.getElementById('pattern-loading').style.display='none';
+}
+
+/* ================= DIARY ================= */
+document.addEventListener('input', (e)=>{
+  if(e.target && e.target.id === 'diary-input'){
+    const words = e.target.value.trim().split(/\s+/).filter(Boolean).length;
+    document.getElementById('diary-word-count').textContent = words;
   }
 });
+async function submitDiary(){
+  const text = document.getElementById('diary-input').value.trim();
+  if(text.split(/\s+/).filter(Boolean).length < 5){ showToast('조금 더 길게 작성해보세요 (5단어 이상)'); return; }
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', ai_configured: !!ANTHROPIC_API_KEY, session_secret_configured: !!process.env.SESSION_SECRET });
-});
+  document.getElementById('diary-loading').style.display='flex';
+  document.getElementById('diary-loading-text').style.display='block';
+  document.getElementById('diary-result').style.display='none';
 
-app.listen(PORT, () => {
-  console.log(`Talk Pro server running on http://localhost:${PORT}`);
-  if (!ANTHROPIC_API_KEY) {
-    console.warn('⚠️  ANTHROPIC_API_KEY가 설정되지 않았습니다. AI 첨삭 기능이 동작하지 않습니다.');
+  const sys = `너는 영어일기 첨삭 AI다. 학생의 레벨은 ${currentLevelData().name}(${currentLevelData().cefr})이다. 학생의 영어일기를 분석한다. 칭찬을 먼저 하고, 개선점은 최대 3개까지만 제시하며 학생 레벨에 맞는 눈높이로 설명한다.
+반드시 순수 JSON만 응답:
+{"cefr":"A1~C1 중 하나","praise":"칭찬 한글 1문장","grammar_fixes":[{"wrong":"","correct":"","reason":""}],"natural_expressions":[{"original":"","better":""}],"recommended_words":["word1","word2","word3"],"weakness_tags":["태그1","태그2"]}`;
+
+  try{
+    const raw = await callClaude(sys, `학생 일기: """${text}"""`);
+    const r = safeJsonParse(raw);
+    renderDiaryResult(r);
+  }catch(e){
+    console.error('Diary AI error:', e);
+    document.getElementById('diary-result').innerHTML = '<div class="banner">AI 첨삭 중 오류가 발생했어요: ' + e.message + '<br><button class="btn btn-secondary" style="margin-top:10px;" onclick="submitDiary()">다시 시도</button></div>';
+    document.getElementById('diary-result').style.display='block';
   }
-});
+  document.getElementById('diary-loading').style.display='none';
+  document.getElementById('diary-loading-text').style.display='none';
+}
+function renderDiaryResult(r){
+  const fixesHtml = (r.grammar_fixes||[]).map(f=>
+    `<div style="margin-bottom:8px; font-size:14px;"><span class="diff-del">${f.wrong}</span> → <span class="diff-add">${f.correct}</span><div style="font-size:12.5px; color:var(--ink-soft); margin-top:2px;">${f.reason}</div></div>`
+  ).join('') || '<span style="font-size:13.5px; color:var(--ink-soft);">눈에 띄는 문법 오류가 없어요!</span>';
+
+  const naturalHtml = (r.natural_expressions||[]).map(n=>
+    `<div style="margin-bottom:6px; font-size:14px;">"${n.original}" → <strong>"${n.better}"</strong></div>`
+  ).join('') || '<span style="font-size:13.5px; color:var(--ink-soft);">이미 자연스러운 표현이에요!</span>';
+
+  const wordsHtml = (r.recommended_words||[]).map(w=>`<span class="tag">${w}</span>`).join('');
+  const tagsHtml = (r.weakness_tags||[]).map(t=>`<span class="tag" style="color:var(--coral-dark);">${t}</span>`).join('');
+
+  document.getElementById('diary-result').innerHTML = `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <span style="font-weight:700;">CEFR 평가</span>
+        <span class="gauge-num" style="font-size:20px;">${r.cefr}</span>
+      </div>
+      <div style="font-size:14px; color:var(--teal-dark); font-weight:600;">${r.praise}</div>
+      <div class="feedback-block"><div class="feedback-title">문법 첨삭</div>${fixesHtml}</div>
+      <div class="feedback-block"><div class="feedback-title">더 자연스러운 표현</div>${naturalHtml}</div>
+      <div class="feedback-block"><div class="feedback-title">추천 단어</div>${wordsHtml}</div>
+      <div class="feedback-block" style="border-left-color:var(--coral);"><div class="feedback-title" style="color:var(--coral-dark);">다음 학습에 반영될 약점 태그</div>${tagsHtml}</div>
+      <button class="btn btn-primary" style="margin-top:14px;" onclick="completeMission('diary')">완료하고 홈으로</button>
+    </div>`;
+  document.getElementById('diary-result').style.display='block';
+}
+
+/* ================= INIT ================= */
+switchAuthTab('login');
+primeVoices();
+checkExistingSession();
+</script>
+</body>
+</html>
