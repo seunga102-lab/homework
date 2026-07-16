@@ -263,6 +263,11 @@
     </div>
 
     <div style="padding:0 20px;">
+      <div class="card" style="text-align:center; background:linear-gradient(135deg, var(--ink), var(--teal-dark)); border:none; padding:18px;">
+        <div style="color:rgba(255,255,255,.75); font-size:12.5px; font-weight:600; letter-spacing:.04em;">TALK PRO WITH ME</div>
+        <div style="color:#fff; font-family:'Sora',sans-serif; font-weight:800; font-size:28px; margin-top:2px;" id="day-count-display">1일차</div>
+      </div>
+
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <span style="font-weight:700; font-size:14px;">오늘의 학습 진행률</span>
@@ -380,9 +385,8 @@
         <div id="shadow-diff" style="font-size:15px; line-height:1.8;"></div>
         <p style="font-size:11.5px; color:var(--ink-soft); margin-top:8px;">* 강세/억양 점수는 데모용 추정치이며, 실제 서비스에서는 음소 단위 정밀 분석(forced alignment)을 사용합니다.</p>
       </div>
-      <div id="shadow-auto-advance-label" style="text-align:center; font-size:12.5px; color:var(--ink-soft); margin-top:10px;"></div>
       <div class="btn-row" style="margin-top:8px;">
-        <button class="btn btn-primary" onclick="skipToNextShadow()">지금 다음으로 →</button>
+        <button class="btn btn-primary" onclick="skipToNextShadow()">다음 문장으로 →</button>
       </div>
     </div>
     </div>
@@ -435,7 +439,7 @@
     <p style="color:var(--ink-soft); font-size:13.5px; margin:0 0 16px;" id="pattern-sub">문장이 점점 길어집니다. 큰 소리로 따라 말해보세요.</p>
 
     <div class="step-track" id="pattern-steps">
-      <div class="step-dot current"></div><div class="step-dot"></div><div class="step-dot"></div><div class="step-dot"></div><div class="step-dot"></div>
+      <div class="step-dot current"></div><div class="step-dot"></div><div class="step-dot"></div><div class="step-dot"></div>
     </div>
 
     <div id="pattern-step-1-3">
@@ -456,14 +460,6 @@
       <div id="pattern-mic-diff" style="text-align:center; font-size:16px; line-height:1.8; margin:12px 0;"></div>
 
       <button class="btn btn-primary" style="margin-top:14px;" onclick="nextPatternStep()" id="pattern-next-btn">다음으로</button>
-    </div>
-
-    <div id="pattern-step-4" style="display:none;">
-      <p style="font-size:13px; color:var(--ink-soft); margin-bottom:10px;">AI와 이 패턴을 활용해 짧은 대화를 나눠보세요.</p>
-      <div class="chat-log" id="pattern-chat-log"></div>
-      <input type="text" id="pattern-chat-input" placeholder="영어로 답해보세요...">
-      <button class="btn btn-primary" style="margin-top:10px;" onclick="sendPatternChat()">전송</button>
-      <button class="btn btn-ghost" style="margin-top:4px;" onclick="goPatternStep(5)">대화 마치고 다음 단계로 →</button>
     </div>
 
     <div id="pattern-step-5" style="display:none;">
@@ -506,7 +502,7 @@
 <script>
 /* ================= AUTH & STATE ================= */
 let authToken = null;
-let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, diary:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3 };
+let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, diary:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3, dayCount:1 };
 let authMode = 'login';
 
 function switchAuthTab(mode){
@@ -565,6 +561,7 @@ function applyUserState(user){
   state.completed = user.completed;
   state.usage = user.usage;
   state.dailyLimit = user.dailyLimit || 3;
+  state.dayCount = user.dayCount || 1;
 }
 
 function goPostAuth(){
@@ -670,6 +667,7 @@ async function confirmLevelSelect(){
 function renderHomeStats(){
   document.getElementById('streak-count').textContent = state.streak;
   document.getElementById('xp-count').textContent = state.xp;
+  document.getElementById('day-count-display').textContent = (state.dayCount||1).toLocaleString('ko-KR') + '일차';
   const doneCount = Object.values(state.completed).filter(Boolean).length;
   document.getElementById('today-progress-text').textContent = doneCount + '/4 완료';
   document.getElementById('today-progress-bar').style.width = (doneCount/4*100) + '%';
@@ -917,7 +915,7 @@ async function selectLevel(n){
   // 레벨이 바뀌면 각 학습 화면의 진행 상태를 초기화
   shadowIndex = 0; initShadowSentence();
   dictIndex = 0;
-  patternStepIndex = 0; patternChatHistory = []; initPattern();
+  patternStepIndex = 0; initPattern();
   showToast(currentLevelData().name + ' 콘텐츠로 전환했어요');
 }
 
@@ -1171,8 +1169,6 @@ async function scoreShadowing(transcript, durationSec){
   document.getElementById('shadow-diff').innerHTML = diffHtml;
   document.getElementById('shadow-result').style.display = 'block';
   document.getElementById('shadow-rec-label').textContent = '버튼을 눌러 다시 녹음할 수 있어요';
-
-  startAutoAdvance('shadow', 3, advanceShadowingOrFinish, 'shadow-auto-advance-label');
 }
 
 /* ================= DICTATION ================= */
@@ -1254,10 +1250,6 @@ function renderDictResult(r){
 
   document.getElementById('dict-result').innerHTML = `
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:700;">채점 결과</span>
-        <span class="gauge-num" style="font-size:22px;">${r.score}점</span>
-      </div>
       <div class="feedback-block">
         <div class="feedback-title">철자 확인</div>
         <div>${errHtml}</div>
@@ -1280,13 +1272,11 @@ function renderDictResult(r){
 
 /* ================= PATTERN ================= */
 let patternStepIndex = 0;
-let patternChatHistory = [];
 function currentPatternSteps(){ return currentLevelData().pattern; }
 
 function initPattern(){
   patternStepIndex = 0;
   document.getElementById('pattern-current-sentence').textContent = currentPatternSteps()[0];
-  document.getElementById('pattern-chat-log').innerHTML = '';
   document.getElementById('pattern-own-sentence').value = '';
   document.getElementById('pattern-result').innerHTML = '';
   document.getElementById('pattern-complete-btn').style.display = 'none';
@@ -1305,8 +1295,7 @@ function updatePatternDots(){
   });
 }
 function currentDotIndex(){
-  if(document.getElementById('pattern-step-4').style.display !== 'none') return 3;
-  if(document.getElementById('pattern-step-5').style.display !== 'none') return 4;
+  if(document.getElementById('pattern-step-5').style.display !== 'none') return 3;
   return patternStepIndex;
 }
 function playPatternSentence(){
@@ -1365,49 +1354,13 @@ function nextPatternStep(){
     document.getElementById('pattern-current-sentence').textContent = steps[patternStepIndex];
     updatePatternDots();
   } else {
-    goPatternStep(4);
+    goPatternStep(5);
   }
 }
 function goPatternStep(n){
   document.getElementById('pattern-step-1-3').style.display = n<=3 ? 'block':'none';
-  document.getElementById('pattern-step-4').style.display = n===4 ? 'block':'none';
   document.getElementById('pattern-step-5').style.display = n===5 ? 'block':'none';
   updatePatternDots();
-  if(n===4 && patternChatHistory.length===0){
-    const opener = "Great! Let's practice using this pattern in a real chat. Try responding with a full sentence!";
-    addPatternBubble('ai', opener);
-    patternChatHistory.push({role:'assistant', content:opener});
-  }
-}
-function addPatternBubble(who, text){
-  const log = document.getElementById('pattern-chat-log');
-  const div = document.createElement('div');
-  div.className = 'bubble ' + (who==='ai'?'ai':'me');
-  div.textContent = text;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
-}
-async function sendPatternChat(){
-  const input = document.getElementById('pattern-chat-input');
-  const val = input.value.trim();
-  if(!val) return;
-  addPatternBubble('me', val);
-  patternChatHistory.push({role:'user', content:val});
-  input.value = '';
-
-  const sys = `너는 영어회화 연습 파트너 AI다. 학생의 레벨은 ${currentLevelData().name}(${currentLevelData().cefr})이고, 지금 "${currentPatternSteps()[currentPatternSteps().length-1]}" 패턴을 연습 중이다.
-학생의 문장에 짧고 자연스럽게 반응하고, 대화를 이어갈 후속 질문을 하나 던져라. 학생 레벨에 맞는 난이도의 영어를 사용하라. 필요하면 학생 문장에 문법 오류가 있을 때만 아주 짧게(괄호로) 자연스러운 표현을 알려줘라.
-2~3문장 이내의 영어로만 답하라. 다른 설명 없이 대화 내용만 응답하라.`;
-  const historyText = patternChatHistory.map(m=> (m.role==='user'?'Student: ':'AI: ')+m.content).join('\n');
-
-  try{
-    const reply = await callClaude(sys, historyText);
-    addPatternBubble('ai', reply);
-    patternChatHistory.push({role:'assistant', content:reply});
-  }catch(e){
-    console.error('Pattern chat AI error:', e);
-    addPatternBubble('ai', "(오류: " + e.message + ")");
-  }
 }
 async function submitPatternSentence(){
   const val = document.getElementById('pattern-own-sentence').value.trim();
