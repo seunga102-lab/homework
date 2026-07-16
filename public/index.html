@@ -411,6 +411,7 @@
     <div id="dict-main-content">
     <div class="sentence-box" style="padding:16px;">
       <div class="speed-row" style="margin-bottom:14px;">
+        <div class="speed-chip" data-rate="0.5" onclick="setDictRate(0.5,this)">0.5x</div>
         <div class="speed-chip" data-rate="0.7" onclick="setDictRate(0.7,this)">0.7x</div>
         <div class="speed-chip active" data-rate="1.0" onclick="setDictRate(1.0,this)">1.0x</div>
         <div class="speed-chip" data-rate="1.3" onclick="setDictRate(1.3,this)">1.3x</div>
@@ -1248,8 +1249,15 @@ function renderDictResult(r){
     ? r.spelling_errors.map(e=>`<span class="tag" style="color:var(--error); border-color:#f3c8c8;">${e.wrong} → ${e.correct}</span>`).join('')
     : '<span class="tag" style="color:var(--success);">철자 오류 없음 ✓</span>';
 
+  const answer = currentDictSentence();
+
   document.getElementById('dict-result').innerHTML = `
     <div class="card">
+      <div class="feedback-block" style="border-left-color:var(--teal);">
+        <div class="feedback-title">정답 문장</div>
+        <div style="font-size:15px; font-weight:600;">${answer.en}</div>
+        <div style="font-size:13.5px; color:var(--ink-soft); margin-top:4px;">${answer.ko}</div>
+      </div>
       <div class="feedback-block">
         <div class="feedback-title">철자 확인</div>
         <div>${errHtml}</div>
