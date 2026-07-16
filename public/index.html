@@ -79,6 +79,7 @@
   .mission-title{ font-weight:700; font-size:15px; margin:0 0 2px; }
   .mission-sub{ font-size:12.5px; color:var(--ink-soft); margin:0;}
   .chev{ margin-left:auto; color:var(--ink-soft); }
+  .mission-badge{ margin-left:auto; background:var(--success-bg); color:var(--success); font-size:11.5px; font-weight:700; padding:4px 9px; border-radius:12px; white-space:nowrap; }
 
   .section-label{
     font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
@@ -293,6 +294,7 @@
           <p class="mission-title">쉐도잉</p>
           <p class="mission-sub">발음 · 억양 · 속도 분석 · 약 5분</p>
         </div>
+        <span class="mission-badge" id="badge-shadowing" style="display:none;">✓ 완료</span>
         <div class="chev">›</div>
       </div>
 
@@ -302,6 +304,7 @@
           <p class="mission-title">딕테이션</p>
           <p class="mission-sub">듣고 받아쓰기 · AI 채점 · 약 5분</p>
         </div>
+        <span class="mission-badge" id="badge-dictation" style="display:none;">✓ 완료</span>
         <div class="chev">›</div>
       </div>
 
@@ -311,6 +314,7 @@
           <p class="mission-title">원어민 패턴 학습</p>
           <p class="mission-sub">"I'm the one who..." 패턴 · 약 7분</p>
         </div>
+        <span class="mission-badge" id="badge-pattern" style="display:none;">✓ 완료</span>
         <div class="chev">›</div>
       </div>
 
@@ -320,6 +324,7 @@
           <p class="mission-title">영어일기</p>
           <p class="mission-sub">자유 작문 · AI 첨삭 · 약 8분</p>
         </div>
+        <span class="mission-badge" id="badge-diary" style="display:none;">✓ 완료</span>
         <div class="chev">›</div>
       </div>
 
@@ -446,6 +451,7 @@
     <div id="pattern-step-1-3">
       <div class="sentence-box">
         <div class="sentence-en" id="pattern-current-sentence"></div>
+        <div class="sentence-ko" id="pattern-current-sentence-ko"></div>
       </div>
       <button class="play-btn" onclick="playPatternSentence()">▶</button>
 
@@ -490,11 +496,67 @@
     <div id="diary-result" style="display:none; margin-top:16px;"></div>
   </div>
 
+  <!-- ============ REPORT ============ -->
+  <div class="screen" id="screen-report">
+    <button class="back-btn" onclick="go('home')">‹ 홈으로</button>
+    <h2 style="margin:0 0 4px;">리포트</h2>
+    <p style="color:var(--ink-soft); font-size:13.5px; margin:0 0 16px;">내 학습 현황을 한눈에 확인해보세요.</p>
+
+    <div class="card" style="text-align:center; background:linear-gradient(135deg, var(--ink), var(--teal-dark)); border:none; padding:18px;">
+      <div style="color:rgba(255,255,255,.75); font-size:12.5px; font-weight:600;">누적 경험치</div>
+      <div style="color:#fff; font-family:'Sora',sans-serif; font-weight:800; font-size:28px; margin-top:2px;"><span id="report-xp">0</span> XP</div>
+    </div>
+
+    <div class="score-grid" style="margin-top:14px;">
+      <div class="gauge-card"><div class="gauge-num" id="report-streak">0</div><div class="gauge-label">연속 학습일</div></div>
+      <div class="gauge-card"><div class="gauge-num" id="report-daycount">1</div><div class="gauge-label">가입 후 일수</div></div>
+    </div>
+
+    <div class="section-label">오늘의 미션 현황</div>
+    <div class="card" id="report-mission-list" style="padding:14px;"></div>
+
+    <div class="section-label">쉐도잉 / 딕테이션 오늘 사용량</div>
+    <div class="card" style="padding:14px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+        <span style="font-size:13.5px;">🗣️ 쉐도잉</span>
+        <span style="font-weight:700;" id="report-usage-shadow">0/3</span>
+      </div>
+      <div style="display:flex; justify-content:space-between;">
+        <span style="font-size:13.5px;">✍️ 딕테이션</span>
+        <span style="font-weight:700;" id="report-usage-dict">0/3</span>
+      </div>
+    </div>
+    <p style="font-size:11.5px; color:var(--ink-soft); text-align:center; margin-top:14px;">* 일자별 상세 학습 그래프는 다음 버전에서 제공될 예정이에요.</p>
+  </div>
+
+  <!-- ============ MY PAGE ============ -->
+  <div class="screen" id="screen-mypage">
+    <button class="back-btn" onclick="go('home')">‹ 홈으로</button>
+    <h2 style="margin:0 0 4px;">마이페이지</h2>
+    <p style="color:var(--ink-soft); font-size:13.5px; margin:0 0 16px;">계정 정보를 확인하고 관리하세요.</p>
+
+    <div class="card" style="display:flex; align-items:center; gap:14px;">
+      <div class="mission-icon" style="background:#E5F5F3; font-size:22px;">👤</div>
+      <div>
+        <p class="mission-title" id="mypage-username">-</p>
+        <p class="mission-sub" id="mypage-level">-</p>
+      </div>
+    </div>
+
+    <div class="section-label">레벨 변경</div>
+    <div class="card" style="padding:14px;">
+      <div id="mypage-level-chip-row" style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px;"></div>
+    </div>
+
+    <div class="section-label">계정</div>
+    <button class="btn btn-secondary" onclick="logout()">로그아웃</button>
+  </div>
+
   <div class="bottom-nav" style="display:none;">
     <button class="nav-item active" data-nav="home" onclick="go('home')"><span class="nav-icon">🏠</span>홈</button>
     <button class="nav-item" data-nav="shadowing" onclick="go('shadowing')"><span class="nav-icon">🗣️</span>학습</button>
-    <button class="nav-item" data-nav="report" onclick="showToast('리포트 화면은 다음 버전에서 제공됩니다 📊')"><span class="nav-icon">📈</span>리포트</button>
-    <button class="nav-item" data-nav="me" onclick="showToast('마이페이지는 다음 버전에서 제공됩니다 🙂')"><span class="nav-icon">👤</span>마이</button>
+    <button class="nav-item" data-nav="report" onclick="openReport()"><span class="nav-icon">📈</span>리포트</button>
+    <button class="nav-item" data-nav="me" onclick="openMyPage()"><span class="nav-icon">👤</span>마이</button>
   </div>
 
   <div class="toast" id="toast"></div>
@@ -503,7 +565,7 @@
 <script>
 /* ================= AUTH & STATE ================= */
 let authToken = null;
-let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, diary:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3, dayCount:1 };
+let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, diary:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3, dayCount:1, username:'' };
 let authMode = 'login';
 
 function switchAuthTab(mode){
@@ -555,6 +617,7 @@ async function submitAuth(){
 }
 
 function applyUserState(user){
+  state.username = user.username || '';
   state.level = user.level;
   state.levelChosen = user.levelChosen;
   state.xp = user.xp;
@@ -672,6 +735,11 @@ function renderHomeStats(){
   const doneCount = Object.values(state.completed).filter(Boolean).length;
   document.getElementById('today-progress-text').textContent = doneCount + '/4 완료';
   document.getElementById('today-progress-bar').style.width = (doneCount/4*100) + '%';
+
+  ['shadowing','dictation','pattern','diary'].forEach(type=>{
+    const badge = document.getElementById('badge-'+type);
+    if(badge) badge.style.display = state.completed[type] ? 'inline-block' : 'none';
+  });
 }
 function updateUsagePills(){
   const sPill = document.getElementById('shadow-usage-pill');
@@ -746,7 +814,7 @@ function go(screen){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+screen).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  const navMap = {home:'home', shadowing:'shadowing', dictation:'shadowing', pattern:'shadowing', diary:'shadowing'};
+  const navMap = {home:'home', shadowing:'shadowing', dictation:'shadowing', pattern:'shadowing', diary:'shadowing', report:'report', mypage:'me'};
   const navEl = document.querySelector('[data-nav="'+(navMap[screen]||'home')+'"]');
   if(navEl) navEl.classList.add('active');
   document.querySelector('.bottom-nav').style.display = (screen==='login' || screen==='level-select') ? 'none' : 'flex';
@@ -762,6 +830,40 @@ function go(screen){
     document.getElementById('dict-limit-reached').style.display = reached ? 'block' : 'none';
     document.getElementById('dict-main-content').style.display = reached ? 'none' : 'block';
   }
+}
+
+/* ================= REPORT ================= */
+function openReport(){
+  renderReport();
+  go('report');
+}
+function renderReport(){
+  document.getElementById('report-xp').textContent = state.xp;
+  document.getElementById('report-streak').textContent = state.streak;
+  document.getElementById('report-daycount').textContent = (state.dayCount||1).toLocaleString('ko-KR');
+  document.getElementById('report-usage-shadow').textContent = (state.usage.shadowing||0) + '/' + state.dailyLimit;
+  document.getElementById('report-usage-dict').textContent = (state.usage.dictation||0) + '/' + state.dailyLimit;
+
+  const missionLabels = { shadowing:'🗣️ 쉐도잉', dictation:'✍️ 딕테이션', pattern:'💬 원어민 패턴 학습', diary:'📔 영어일기' };
+  const listHtml = Object.keys(missionLabels).map(type=>{
+    const done = state.completed[type];
+    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; ${type!=='diary' ? 'border-bottom:1px solid var(--line);' : ''}">
+      <span style="font-size:13.5px;">${missionLabels[type]}</span>
+      <span style="font-weight:700; font-size:13px; color:${done ? 'var(--success)' : 'var(--ink-soft)'};">${done ? '✓ 완료' : '미완료'}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('report-mission-list').innerHTML = listHtml;
+}
+
+/* ================= MY PAGE ================= */
+function openMyPage(){
+  renderMyPage();
+  go('mypage');
+}
+function renderMyPage(){
+  document.getElementById('mypage-username').textContent = state.username || '-';
+  document.getElementById('mypage-level').textContent = currentLevelData().name + ' (' + currentLevelData().cefr + ')';
+  renderLevelSelector();
 }
 function showToast(msg){
   const t = document.getElementById('toast');
@@ -819,7 +921,7 @@ const LEVELS = {
       {en:"I have a cat.", ko:"나는 고양이가 있다."},
       {en:"She is my friend.", ko:"그녀는 내 친구다."}
     ],
-    pattern:["I like...","I like pizza.","I like pizza and pasta."]
+    pattern:[{en:"I like...",ko:"나는 좋아해..."},{en:"I like pizza.",ko:"나는 피자를 좋아해."},{en:"I like pizza and pasta.",ko:"나는 피자랑 파스타를 좋아해."}]
   },
   2: { name:"Lv.2 초급", cefr:"CEFR A2",
     shadow:[
@@ -832,7 +934,7 @@ const LEVELS = {
       {en:"I need to buy some groceries.", ko:"나는 식료품을 좀 사야 해."},
       {en:"He works at a hospital.", ko:"그는 병원에서 일한다."}
     ],
-    pattern:["I want to...","I want to learn English.","I want to learn English this year."]
+    pattern:[{en:"I want to...",ko:"나는 ~하고 싶어..."},{en:"I want to learn English.",ko:"나는 영어를 배우고 싶어."},{en:"I want to learn English this year.",ko:"나는 올해 영어를 배우고 싶어."}]
   },
   3: { name:"Lv.3 초중급", cefr:"CEFR A2-B1",
     shadow:[
@@ -845,7 +947,7 @@ const LEVELS = {
       {en:"We should have left earlier.", ko:"우리는 더 일찍 떠났어야 했어."},
       {en:"He's been working here for five years.", ko:"그는 여기서 5년째 일하고 있어."}
     ],
-    pattern:["I'm the one who...","I'm the one who called you.","I'm the one who called you yesterday."]
+    pattern:[{en:"I'm the one who...",ko:"~한 사람은 바로 나야..."},{en:"I'm the one who called you.",ko:"너한테 전화한 사람이 바로 나야."},{en:"I'm the one who called you yesterday.",ko:"어제 너한테 전화한 사람이 바로 나야."}]
   },
   4: { name:"Lv.4 중급", cefr:"CEFR B1",
     shadow:[
@@ -858,7 +960,7 @@ const LEVELS = {
       {en:"I've been meaning to ask you something.", ko:"너한테 물어보고 싶은 게 있었어."},
       {en:"The meeting has been postponed until next week.", ko:"회의가 다음 주로 미뤄졌어."}
     ],
-    pattern:["What I really need is...","What I really need is more time.","What I really need is more time to finish this properly."]
+    pattern:[{en:"What I really need is...",ko:"내게 정말 필요한 건..."},{en:"What I really need is more time.",ko:"내게 정말 필요한 건 시간이야."},{en:"What I really need is more time to finish this properly.",ko:"내게 정말 필요한 건 이걸 제대로 끝낼 시간이야."}]
   },
   5: { name:"Lv.5 중고급", cefr:"CEFR B1-B2",
     shadow:[
@@ -871,7 +973,7 @@ const LEVELS = {
       {en:"There's no way I would have agreed to that.", ko:"내가 그거에 동의했을 리가 없어."},
       {en:"It's not that I don't care, it's just complicated.", ko:"신경 안 쓰는 게 아니라 그냥 복잡한 거야."}
     ],
-    pattern:["The thing is...","The thing is, I never actually agreed to this.","The thing is, I never actually agreed to this in the first place."]
+    pattern:[{en:"The thing is...",ko:"문제는 말이야..."},{en:"The thing is, I never actually agreed to this.",ko:"문제는, 나는 이거에 동의한 적이 없다는 거야."},{en:"The thing is, I never actually agreed to this in the first place.",ko:"문제는, 애초에 나는 이거에 동의한 적이 없다는 거야."}]
   },
   6: { name:"Lv.6 고급", cefr:"CEFR B2-C1",
     shadow:[
@@ -884,22 +986,26 @@ const LEVELS = {
       {en:"It's a slippery slope once you start making exceptions.", ko:"예외를 만들기 시작하면 걷잡을 수 없게 돼."},
       {en:"At the end of the day, results speak louder than words.", ko:"결국엔 결과가 말보다 더 중요해."}
     ],
-    pattern:["What strikes me is...","What strikes me is how quickly things changed.","What strikes me is how quickly things changed once we committed to the plan."]
+    pattern:[{en:"What strikes me is...",ko:"내가 놀란 건..."},{en:"What strikes me is how quickly things changed.",ko:"내가 놀란 건 상황이 얼마나 빨리 바뀌었는가야."},{en:"What strikes me is how quickly things changed once we committed to the plan.",ko:"내가 놀란 건, 우리가 계획을 실행하기로 하자마자 상황이 얼마나 빨리 바뀌었는가야."}]
   }
 };
 
 function currentLevelData(){ return LEVELS[state.level || 3]; }
 
 function renderLevelSelector(){
-  const row = document.getElementById('level-chip-row');
-  row.innerHTML = '';
-  for(let i=1;i<=6;i++){
-    const chip = document.createElement('div');
-    chip.className = 'level-chip' + (state.level===i ? ' active':'');
-    chip.textContent = 'Lv.'+i;
-    chip.onclick = ()=>selectLevel(i);
-    row.appendChild(chip);
-  }
+  const rowIds = ['level-chip-row', 'mypage-level-chip-row'];
+  rowIds.forEach(rowId=>{
+    const row = document.getElementById(rowId);
+    if(!row) return;
+    row.innerHTML = '';
+    for(let i=1;i<=6;i++){
+      const chip = document.createElement('div');
+      chip.className = 'level-chip' + (state.level===i ? ' active':'');
+      chip.textContent = 'Lv.'+i;
+      chip.onclick = ()=>selectLevel(i);
+      row.appendChild(chip);
+    }
+  });
   document.getElementById('level-name-display').textContent = currentLevelData().name;
   document.getElementById('level-cefr-display').textContent = currentLevelData().cefr;
 }
@@ -1284,7 +1390,8 @@ function currentPatternSteps(){ return currentLevelData().pattern; }
 
 function initPattern(){
   patternStepIndex = 0;
-  document.getElementById('pattern-current-sentence').textContent = currentPatternSteps()[0];
+  document.getElementById('pattern-current-sentence').textContent = currentPatternSteps()[0].en;
+  document.getElementById('pattern-current-sentence-ko').textContent = currentPatternSteps()[0].ko;
   document.getElementById('pattern-own-sentence').value = '';
   document.getElementById('pattern-result').innerHTML = '';
   document.getElementById('pattern-complete-btn').style.display = 'none';
@@ -1307,7 +1414,7 @@ function currentDotIndex(){
   return patternStepIndex;
 }
 function playPatternSentence(){
-  speakText(currentPatternSteps()[patternStepIndex], 0.95);
+  speakText(currentPatternSteps()[patternStepIndex].en, 0.95);
 }
 
 let patternRecognition = null;
@@ -1325,7 +1432,7 @@ function togglePatternRecording(){
 
   patternRecognition = startRecognition(
     (transcript, duration)=>{
-      const targetSentence = currentPatternSteps()[patternStepIndex];
+      const targetSentence = currentPatternSteps()[patternStepIndex].en;
       const { accuracy, stress, intonation, wpm, diffHtml } = computeSpeechScore(targetSentence, transcript, duration);
 
       document.getElementById('pattern-score-accuracy').textContent = accuracy+'%';
@@ -1359,7 +1466,8 @@ function nextPatternStep(){
   document.getElementById('pattern-score-grid').style.display = 'none';
   document.getElementById('pattern-rec-label').textContent = '버튼을 눌러 따라 말해보세요 (선택)';
   if(patternStepIndex < steps.length){
-    document.getElementById('pattern-current-sentence').textContent = steps[patternStepIndex];
+    document.getElementById('pattern-current-sentence').textContent = steps[patternStepIndex].en;
+    document.getElementById('pattern-current-sentence-ko').textContent = steps[patternStepIndex].ko;
     updatePatternDots();
   } else {
     goPatternStep(5);
@@ -1376,7 +1484,7 @@ async function submitPatternSentence(){
   document.getElementById('pattern-loading').style.display='flex';
   document.getElementById('pattern-result').innerHTML='';
 
-  const sys = `너는 영어 작문 첨삭 AI다. 학생의 레벨은 ${currentLevelData().name}(${currentLevelData().cefr})이고, "${currentPatternSteps()[0]}" 패턴을 연습 중이며 이 문장을 응용해서 작문했다.
+  const sys = `너는 영어 작문 첨삭 AI다. 학생의 레벨은 ${currentLevelData().name}(${currentLevelData().cefr})이고, "${currentPatternSteps()[0].en}" 패턴을 연습 중이며 이 문장을 응용해서 작문했다.
 반드시 순수 JSON만 응답: {"corrected": "수정된 문장", "explanation": "무엇을 왜 고쳤는지 한글로 2문장 이내", "natural_alt": "더 자연스러운 원어민식 표현 (다르면 제시, 같으면 동일 문장)"}`;
   try{
     const raw = await callClaude(sys, `학생 문장: "${val}"`);
