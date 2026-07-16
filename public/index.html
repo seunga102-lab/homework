@@ -690,8 +690,18 @@ async function submitAuth(){
   try{
     const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
     const body = { username, password };
+    let signingUpAsTeacher = false;
     if(authMode === 'signup' && document.getElementById('auth-is-teacher').checked){
-      body.teacherCode = document.getElementById('auth-teacher-code').value.trim();
+      const code = document.getElementById('auth-teacher-code').value.trim();
+      if(!code){
+        errEl.textContent = '선생님 코드를 입력해주세요.';
+        errEl.style.display = 'block';
+        document.getElementById('auth-loading').style.display = 'none';
+        document.getElementById('auth-submit-btn').disabled = false;
+        return;
+      }
+      body.teacherCode = code;
+      signingUpAsTeacher = true;
     }
     const res = await fetch(endpoint, {
       method:'POST',
@@ -705,6 +715,12 @@ async function submitAuth(){
     authToken = data.token;
     localStorage.setItem('talkpro-token', authToken);
     applyUserState(data.user);
+    if(authMode === 'signup'){
+      showToast(data.user.role === 'teacher' ? '✅ 선생님 계정으로 가입됐어요' : '학생 계정으로 가입됐어요');
+      if(signingUpAsTeacher && data.user.role !== 'teacher'){
+        console.warn('선생님 코드를 입력했지만 학생 계정으로 생성됨 - 코드가 서버 설정과 다를 수 있음');
+      }
+    }
     goPostAuth();
   }catch(e){
     errEl.textContent = e.message;
