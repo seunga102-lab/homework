@@ -10,13 +10,20 @@ const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
 
+// 세션 토큰 서명용 비밀키. 배포 시 환경변수로 고정해두는 걸 강력 권장한다.
+// (설정 안 하면 서버 재시작마다 바뀌어서 모든 사용자가 다시 로그인해야 함)
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 if (!process.env.SESSION_SECRET) {
   console.warn('⚠️  SESSION_SECRET 환경변수가 설정되어 있지 않습니다. 서버가 재시작되면 모든 로그인 세션이 초기화됩니다.');
 }
 
-const DAILY_LIMIT = 3;
+const DAILY_LIMIT = 3; // 쉐도잉/딕테이션 1일 학습 가능 문장 수
 
+// 선생님 계정으로 가입하려면 이 코드를 알아야 한다. 배포 시 환경변수로 반드시 바꿔서 사용할 것.
+const TEACHER_SIGNUP_CODE = process.env.TEACHER_SIGNUP_CODE || 'talkpro-teacher';
+
+/* ================= 간단한 파일 기반 사용자 DB ================= */
+// 참고: Render 무료 플랜은 디스크가 "재배포" 시 초기화된다. 실서비스 전환 시 실제 DB(PostgreSQL 등)로 교체 필요.
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 
@@ -36,9 +43,11 @@ function writeDB(db) {
 }
 
 function todayKST() {
+  // 한국 시간 기준 날짜 문자열 (일일 학습 제한 리셋 기준)
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 function daysSince(dateStr) {
+  // 가입일(joinDate)부터 오늘까지 며칠째인지 계산 (가입일 = 1일차)
   const start = new Date(dateStr + 'T00:00:00+09:00');
   const today = new Date(todayKST() + 'T00:00:00+09:00');
   const diffDays = Math.round((today - start) / (1000 * 60 * 60 * 24));
@@ -57,7 +66,7 @@ function verifyPassword(password, salt, expectedHash) {
 }
 
 function createToken(username) {
-  const exp = Date.now() + 1000 * 60 * 60 * 24 * 30;
+  const exp = Date.now() + 1000 * 60 * 60 * 24 * 30; // 30일 유지
   const payload = `${username}:${exp}`;
   const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
   return Buffer.from(payload).toString('base64') + '.' + sig;
@@ -78,8 +87,9 @@ function verifyToken(token) {
   return username;
 }
 
-function defaultUserState() {
+function defaultUserState(role) {
   return {
+    role: role === 'teacher' ? 'teacher' : 'student',
     level: 3,
     levelChosen: false,
     xp: 0,
@@ -96,12 +106,16 @@ function rollUsageIfNeeded(user) {
     user.completed = { shadowing: false, dictation: false, pattern: false, diary: false };
   }
   if (!user.joinDate) {
-    user.joinDate = today;
+    user.joinDate = today; // 기존 계정에 가입일 정보가 없으면 오늘부터 1일차로 시작
+  }
+  if (!user.role) {
+    user.role = 'student'; // 기존 계정 호환
   }
 }
 function sanitizeUser(username, user) {
   return {
     username,
+    role: user.role || 'student',
     level: user.level,
     levelChosen: !!user.levelChosen,
     xp: user.xp,
@@ -129,12 +143,22 @@ function requireAuth(req, res, next) {
   next();
 }
 
+function requireTeacher(req, res, next) {
+  const user = req.db.users[req.username];
+  if (!user || user.role !== 'teacher') {
+    return res.status(403).json({ error: '선생님 계정만 접근할 수 있어요.' });
+  }
+  next();
+}
+
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+/* ================= 인증 API ================= */
 app.post('/api/auth/signup', (req, res) => {
   const { username, password } = req.body || {};
+  const teacherCode = (req.body && req.body.teacherCode || '').trim();
   if (!username || !password) {
     return res.status(400).json({ error: '아이디와 비밀번호를 입력해주세요.' });
   }
@@ -144,15 +168,19 @@ app.post('/api/auth/signup', (req, res) => {
   if (password.length < 4) {
     return res.status(400).json({ error: '비밀번호는 4자 이상이어야 해요.' });
   }
+  if (teacherCode && teacherCode !== TEACHER_SIGNUP_CODE.trim()) {
+    return res.status(400).json({ error: '선생님 코드가 올바르지 않아요.' });
+  }
 
   const db = readDB();
   if (db.users[username]) {
     return res.status(409).json({ error: '이미 사용 중인 아이디예요.' });
   }
 
+  const role = teacherCode === TEACHER_SIGNUP_CODE.trim() && teacherCode !== '' ? 'teacher' : 'student';
   const salt = crypto.randomBytes(16).toString('hex');
   const passwordHash = hashPassword(password, salt);
-  db.users[username] = { salt, passwordHash, ...defaultUserState() };
+  db.users[username] = { salt, passwordHash, ...defaultUserState(role) };
   writeDB(db);
 
   res.json({ token: createToken(username), user: sanitizeUser(username, db.users[username]) });
@@ -202,6 +230,7 @@ app.post('/api/me/progress', requireAuth, (req, res) => {
   res.json({ user: sanitizeUser(req.username, user) });
 });
 
+// 쉐도잉/딕테이션 하루 3개 제한 체크 및 소모
 app.post('/api/usage/increment', requireAuth, (req, res) => {
   const { type } = req.body || {};
   if (type !== 'shadowing' && type !== 'dictation') {
@@ -218,6 +247,26 @@ app.post('/api/usage/increment', requireAuth, (req, res) => {
   res.json({ allowed: true, remaining: DAILY_LIMIT - user.usage[type], limit: DAILY_LIMIT });
 });
 
+/* ================= 선생님 API ================= */
+app.get('/api/teacher/students', requireAuth, requireTeacher, (req, res) => {
+  const db = req.db;
+  let changed = false;
+  const students = Object.keys(db.users)
+    .filter(username => (db.users[username].role || 'student') === 'student')
+    .map(username => {
+      const user = db.users[username];
+      const beforeDate = user.usage && user.usage.date;
+      rollUsageIfNeeded(user);
+      if (beforeDate !== user.usage.date) changed = true;
+      return sanitizeUser(username, user);
+    })
+    .sort((a, b) => a.username.localeCompare(b.username));
+  if (changed) writeDB(db);
+  res.json({ students });
+});
+
+/* ================= AI 프록시 엔드포인트 ================= */
+// 프론트엔드는 절대 API 키를 직접 다루지 않는다. 프론트엔드 -> 이 서버 -> Anthropic API 순서로만 호출된다.
 app.post('/api/ai', requireAuth, async (req, res) => {
   if (!ANTHROPIC_API_KEY) {
     return res.status(500).json({
@@ -277,8 +326,14 @@ app.post('/api/ai', requireAuth, async (req, res) => {
   }
 });
 
+// 헬스체크 (배포 플랫폼이 앱 상태를 확인할 때 사용)
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', ai_configured: !!ANTHROPIC_API_KEY, session_secret_configured: !!process.env.SESSION_SECRET });
+  res.json({
+    status: 'ok',
+    ai_configured: !!ANTHROPIC_API_KEY,
+    session_secret_configured: !!process.env.SESSION_SECRET,
+    teacher_code_configured: !!process.env.TEACHER_SIGNUP_CODE
+  });
 });
 
 app.listen(PORT, () => {
