@@ -912,11 +912,53 @@ function setShadowRate(rate, el){
   document.querySelectorAll('#screen-shadowing .speed-chip').forEach(c=>c.classList.remove('active'));
   el.classList.add('active');
 }
-function playShadowSentence(){
-  const u = new SpeechSynthesisUtterance(currentLevelData().shadow[shadowIndex].en);
-  u.lang = 'en-US'; u.rate = shadowRate;
+// 공용 TTS 함수: 안드로이드(특히 삼성인터넷 등)에서 speak()가 조용히 실패하는 문제를 최대한 방어한다.
+let currentUtterance = null; // 일부 브라우저는 참조가 사라지면(GC) 발화 중간에 소리가 끊기므로 전역에 유지
+let voicesReady = false;
+
+function primeVoices(){
+  if(!('speechSynthesis' in window)) return;
+  const voices = speechSynthesis.getVoices();
+  if(voices.length > 0) voicesReady = true;
+  speechSynthesis.onvoiceschanged = ()=>{ voicesReady = true; };
+}
+
+function speakText(text, rate){
+  if(!('speechSynthesis' in window)){
+    showToast('이 브라우저는 음성 재생을 지원하지 않아요. Chrome 브라우저를 사용해주세요.');
+    return;
+  }
   speechSynthesis.cancel();
-  speechSynthesis.speak(u);
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'en-US';
+  utter.rate = rate;
+
+  // 영어 음성이 따로 있으면 명시적으로 지정 (일부 안드로이드 기기는 지정 안 하면 무음으로 실패함)
+  const voices = speechSynthesis.getVoices();
+  const enVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+  if(enVoice) utter.voice = enVoice;
+
+  let started = false;
+  utter.onstart = ()=>{ started = true; };
+  utter.onerror = (e)=>{
+    console.error('TTS error:', e);
+    showToast('음성 재생에 실패했어요. Chrome 브라우저로 열어보세요 🔊');
+  };
+
+  currentUtterance = utter;
+  speechSynthesis.speak(utter);
+
+  // 삼성인터넷 등 일부 브라우저는 에러 이벤트조차 없이 그냥 무음일 수 있어, 일정 시간 내 시작 안 하면 안내
+  setTimeout(()=>{
+    if(!started){
+      showToast('소리가 안 들리면 Chrome 브라우저로 열어보세요 🔊 (삼성인터넷 등 일부 브라우저는 음성 재생이 제한돼요)');
+    }
+  }, 900);
+}
+
+function playShadowSentence(){
+  speakText(currentLevelData().shadow[shadowIndex].en, shadowRate);
 }
 function resetShadowing(){
   const list = currentLevelData().shadow;
@@ -1101,10 +1143,7 @@ function setDictRate(rate, el){
   el.classList.add('active');
 }
 function playDictSentence(){
-  const u = new SpeechSynthesisUtterance(currentDictSentence().en);
-  u.lang='en-US'; u.rate = dictRate;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
+  speakText(currentDictSentence().en, dictRate);
 }
 function nextDictSentence(){
   const list = currentLevelData().dict;
@@ -1216,9 +1255,7 @@ function currentDotIndex(){
   return patternStepIndex;
 }
 function playPatternSentence(){
-  const u = new SpeechSynthesisUtterance(currentPatternSteps()[patternStepIndex]);
-  u.lang='en-US'; u.rate=0.95;
-  speechSynthesis.cancel(); speechSynthesis.speak(u);
+  speakText(currentPatternSteps()[patternStepIndex], 0.95);
 }
 
 let patternRecognition = null;
@@ -1410,6 +1447,7 @@ function renderDiaryResult(r){
 
 /* ================= INIT ================= */
 switchAuthTab('login');
+primeVoices();
 checkExistingSession();
 </script>
 </body>
