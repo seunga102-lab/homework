@@ -760,6 +760,7 @@ function enterHome(){
   renderHomeStats();
   renderLevelSelector();
   initShadowSentence();
+  prepareDictSentence();
   initPattern();
   updateUsagePills();
   go('home');
@@ -1541,8 +1542,9 @@ async function selectLevel(n){
     if(res.ok) applyUserState(data.user);
   }catch(e){ /* authFetch handles session expiry */ }
   renderLevelSelector();
-  // 레벨이 바뀌면 각 학습 화면을 새로고침 (문장 인덱스는 날짜/사용량 기반으로 자동 계산됨)
+  // 레벨이 바뀌면 각 학습 화면을 새로고침 (문장 인덱스는 이 시점에 새로 고정)
   initShadowSentence();
+  prepareDictSentence();
   initPattern();
   showToast(currentLevelData().name + ' 콘텐츠로 전환했어요');
 }
@@ -1554,6 +1556,7 @@ let shadowRecordStart = 0;
 let shadowRecognition = null;
 let shadowCreditConsumedForCurrent = false;
 let shadowScoringInProgress = false; // 채점(및 크레딧 소모) 처리 중에는 새 녹음을 막아 경쟁 상태를 방지한다.
+let shadowIndexForCurrent = null; // 지금 화면에 "보여지고 있는" 문장의 인덱스를 고정해둔다 (재계산 타이밍 문제 방지)
 
 // 문장 풀 안에서 오늘(dayCount)과 오늘 사용량에 따라 자동으로 다른 문장을 골라준다.
 // 하루에 3문장씩 진행하므로 (dayCount-1)*3 + 오늘 몇 번째인지 를 문장 풀 길이로 나눈 나머지를 사용한다.
@@ -1570,9 +1573,9 @@ function currentDictIndex(){
 
 function initShadowSentence(){
   const list = currentLevelData().shadow;
-  const idx = currentShadowIndex();
-  document.getElementById('shadow-sentence-en').textContent = list[idx].en;
-  document.getElementById('shadow-sentence-ko').textContent = list[idx].ko;
+  shadowIndexForCurrent = currentShadowIndex(); // 이 순간에 딱 한 번만 계산해서 고정
+  document.getElementById('shadow-sentence-en').textContent = list[shadowIndexForCurrent].en;
+  document.getElementById('shadow-sentence-ko').textContent = list[shadowIndexForCurrent].ko;
   document.getElementById('shadow-result').style.display = 'none';
   shadowCreditConsumedForCurrent = false;
   clearAutoAdvance('shadow');
@@ -1643,7 +1646,7 @@ function speakText(text, rate, isRetry){
 }
 
 function playShadowSentence(){
-  speakText(currentLevelData().shadow[currentShadowIndex()].en, shadowRate);
+  speakText(currentLevelData().shadow[shadowIndexForCurrent].en, shadowRate);
 }
 function resetShadowing(){
   // 인덱스는 오늘 사용량 기반으로 자동 계산되므로, 화면만 다시 그려주면 된다.
@@ -1812,9 +1815,8 @@ async function scoreShadowing(transcript, durationSec){
   if(shadowScoringInProgress) return;
   shadowScoringInProgress = true;
   try{
-    // 주의: useDailyCredit()가 오늘 사용량을 증가시켜서 currentShadowIndex()의 결과가 바뀌므로,
-    // 지금 실제로 학생이 듣고 녹음한 "그 문장"을 먼저 확정해둔다.
-    const targetSentence = currentLevelData().shadow[currentShadowIndex()].en;
+    // 화면에 보여지고 있는 문장의 인덱스를 고정값(shadowIndexForCurrent)으로 사용한다 - 재계산 타이밍 문제가 원천적으로 발생할 수 없다.
+    const targetSentence = currentLevelData().shadow[shadowIndexForCurrent].en;
 
     if(!shadowCreditConsumedForCurrent){
       const allowed = await useDailyCredit('shadowing');
@@ -1845,7 +1847,14 @@ async function scoreShadowing(transcript, durationSec){
 let dictRate = 1.0;
 let dictCreditConsumedForCurrent = false;
 let dictScoringInProgress = false; // 중복 제출로 인한 경쟁 상태 방지
-function currentDictSentence(){ return currentLevelData().dict[currentDictIndex()]; }
+let dictIndexForCurrent = null; // 지금 풀고 있는 문장의 인덱스를 고정해둔다 (재계산 타이밍 문제 방지)
+function prepareDictSentence(){
+  dictIndexForCurrent = currentDictIndex(); // 이 순간에 딱 한 번만 계산해서 고정
+}
+function currentDictSentence(){
+  if(dictIndexForCurrent === null) prepareDictSentence();
+  return currentLevelData().dict[dictIndexForCurrent];
+}
 function setDictRate(rate, el){
   dictRate = rate;
   document.querySelectorAll('#screen-dictation .speed-chip').forEach(c=>c.classList.remove('active'));
@@ -1855,7 +1864,7 @@ function playDictSentence(){
   speakText(currentDictSentence().en, dictRate);
 }
 function nextDictSentence(){
-  // 인덱스는 오늘 사용량 기반으로 자동 계산되므로, 입력창/결과만 초기화하면 된다.
+  prepareDictSentence(); // 다음 문장 인덱스를 새로 고정
   document.getElementById('dict-input-en').value = '';
   document.getElementById('dict-input-ko').value = '';
   document.getElementById('dict-result').style.display = 'none';
