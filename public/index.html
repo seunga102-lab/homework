@@ -740,7 +740,7 @@ async function submitAuth(){
         console.warn('선생님 코드를 입력했지만 학생 계정으로 생성됨 - 코드가 서버 설정과 다를 수 있음');
       }
     }
-    goPostAuth();
+    await goPostAuth();
   }catch(e){
     errEl.textContent = e.message;
     errEl.style.display = 'block';
@@ -762,7 +762,7 @@ function applyUserState(user){
   state.dayCount = user.dayCount || 1;
 }
 
-function goPostAuth(){
+async function goPostAuth(){
   if(state.role === 'teacher'){
     openTeacherDashboard();
     return;
@@ -771,18 +771,18 @@ function goPostAuth(){
     renderLevelSelectScreen();
     go('level-select');
   }else{
-    enterHome();
+    await enterHome();
   }
 }
 
-function enterHome(){
+async function enterHome(){
   renderHomeStats();
   renderLevelSelector();
-  initShadowSentence();
-  prepareDictSentence();
-  initPattern();
+  go('home'); // 화면부터 먼저 보여주고, 오늘의 문장은 로딩 상태로 이어서 채운다
+  await initShadowSentence();
+  await prepareDictSentence();
+  await initPattern();
   updateUsagePills();
-  go('home');
 }
 
 function logout(){
@@ -828,7 +828,7 @@ async function checkExistingSession(){
     if(!res.ok) throw new Error('세션 확인 실패');
     const data = await res.json();
     applyUserState(data.user);
-    goPostAuth();
+    await goPostAuth();
   }catch(e){
     logout();
   }
@@ -868,7 +868,7 @@ async function confirmLevelSelect(){
     const data = await res.json();
     if(!res.ok) throw new Error(data.error || '레벨 저장에 실패했어요.');
     applyUserState(data.user);
-    enterHome();
+    await enterHome();
   }catch(e){
     showToast(e.message);
   }
@@ -936,6 +936,50 @@ async function logHistory(type, summary, detail, score){
       body: JSON.stringify({ type, summary, detail: detail||'', score: (typeof score==='number' ? score : null) })
     });
   }catch(e){ /* 기록 실패는 학습 흐름을 막지 않는다 */ }
+}
+
+/* ================= 오늘의 AI 생성 콘텐츠 (쉐도잉/딕테이션/패턴) ================= */
+// AI가 그날 처음 요청될 때 서버에서 생성하고, 이후로는 캐시된 걸 재사용한다 (레벨당/타입당 하루 1회 생성).
+let todayContent = { shadowing:null, dictation:null, pattern:null, level:null, day:null };
+// 서버 요청이 완전히 실패했을 때만 쓰이는 최소한의 비상용 문장 (거의 발생하지 않아야 정상)
+const FALLBACK_LOCAL = {
+  shadowing: [
+    {en:"I am happy today.",ko:"나는 오늘 행복하다."},
+    {en:"I'm not sure what to do next.",ko:"다음에 뭘 해야 할지 잘 모르겠어."},
+    {en:"There's more to this than meets the eye.",ko:"이건 겉보기보다 더 많은 게 있어."}
+  ],
+  dictation: [
+    {en:"My name is Anna.",ko:"내 이름은 애나다."},
+    {en:"I haven't decided yet.",ko:"나는 아직 결정하지 않았어."},
+    {en:"This warrants a closer look.",ko:"이건 더 자세히 살펴볼 필요가 있어."}
+  ],
+  pattern: [
+    {en:"I like...",ko:"나는 좋아해..."},
+    {en:"I like pizza.",ko:"나는 피자를 좋아해."},
+    {en:"I like pizza and pasta.",ko:"나는 피자랑 파스타를 좋아해."}
+  ]
+};
+
+async function ensureTodayContent(){
+  if(todayContent.level === state.level && todayContent.day === state.dayCount &&
+     todayContent.shadowing && todayContent.dictation && todayContent.pattern){
+    return; // 이미 이 레벨/날짜에 대해 로드됨
+  }
+  todayContent = { shadowing:null, dictation:null, pattern:null, level:state.level, day:state.dayCount };
+  try{
+    const [sRes, dRes, pRes] = await Promise.all([
+      authFetch(`/api/content/shadowing/${state.level}`),
+      authFetch(`/api/content/dictation/${state.level}`),
+      authFetch(`/api/content/pattern/${state.level}`)
+    ]);
+    const [sData, dData, pData] = await Promise.all([sRes.json(), dRes.json(), pRes.json()]);
+    todayContent.shadowing = sData.content;
+    todayContent.dictation = dData.content;
+    todayContent.pattern = pData.content;
+  }catch(e){
+    console.error('오늘의 콘텐츠 로딩 오류:', e);
+    showToast('오늘의 학습 문장을 불러오는 중 오류가 발생했어요');
+  }
 }
 
 /* ================= NAV ================= */
@@ -1864,10 +1908,11 @@ async function selectLevel(n){
     if(res.ok) applyUserState(data.user);
   }catch(e){ /* authFetch handles session expiry */ }
   renderLevelSelector();
-  // 레벨이 바뀌면 각 학습 화면을 새로고침 (문장 인덱스는 이 시점에 새로 고정)
-  initShadowSentence();
-  prepareDictSentence();
-  initPattern();
+  // 레벨이 바뀌면 각 학습 화면을 새로고침 (오늘의 AI 문장을 새 레벨 기준으로 다시 불러온다)
+  showToast(currentLevelData().name + ' 콘텐츠로 전환 중...');
+  await initShadowSentence();
+  await prepareDictSentence();
+  await initPattern();
   showToast(currentLevelData().name + ' 콘텐츠로 전환했어요');
 }
 
@@ -1880,28 +1925,19 @@ let shadowCreditConsumedForCurrent = false;
 let shadowScoringInProgress = false; // 채점(및 크레딧 소모) 처리 중에는 새 녹음을 막아 경쟁 상태를 방지한다.
 let shadowIndexForCurrent = null; // 지금 화면에 "보여지고 있는" 문장의 인덱스를 고정해둔다 (재계산 타이밍 문제 방지)
 
-// 문장 풀 안에서 오늘(dayCount)과 오늘 사용량에 따라 자동으로 다른 문장을 골라준다.
-// 하루에 3문장씩 진행하므로 (dayCount-1)*3 + 오늘 몇 번째인지 를 문장 풀 길이로 나눈 나머지를 사용한다.
-function currentShadowIndex(){
-  const pool = currentLevelData().shadow;
-  const usedToday = (state.usage && state.usage.shadowing) || 0;
-  return (((state.dayCount||1) - 1) * 3 + usedToday) % pool.length;
-}
-function currentDictIndex(){
-  const pool = currentLevelData().dict;
-  const usedToday = (state.usage && state.usage.dictation) || 0;
-  return (((state.dayCount||1) - 1) * 3 + usedToday) % pool.length;
-}
-
-function initShadowSentence(){
-  const list = currentLevelData().shadow;
-  shadowIndexForCurrent = currentShadowIndex(); // 이 순간에 딱 한 번만 계산해서 고정
+async function initShadowSentence(){
+  document.getElementById('shadow-sentence-en').textContent = '오늘의 문장을 불러오는 중...';
+  document.getElementById('shadow-sentence-ko').textContent = '';
+  document.getElementById('shadow-result').style.display = 'none';
+  await ensureTodayContent();
+  const list = todayContent.shadowing || FALLBACK_LOCAL.shadowing;
+  shadowIndexForCurrent = (state.usage.shadowing || 0) % list.length; // 이 순간에 딱 한 번만 계산해서 고정
   document.getElementById('shadow-sentence-en').textContent = list[shadowIndexForCurrent].en;
   document.getElementById('shadow-sentence-ko').textContent = list[shadowIndexForCurrent].ko;
-  document.getElementById('shadow-result').style.display = 'none';
   shadowCreditConsumedForCurrent = false;
   clearAutoAdvance('shadow');
 }
+
 function setShadowRate(rate, el){
   shadowRate = rate;
   document.querySelectorAll('#screen-shadowing .speed-chip').forEach(c=>c.classList.remove('active'));
@@ -1918,6 +1954,29 @@ function primeVoices(){
   speechSynthesis.onvoiceschanged = ()=>{ voicesReady = true; };
 }
 
+// 설치된 영어 음성들 중 더 자연스러운 것을 우선적으로 골라준다 (완전한 해결책은 아니지만 무료로 할 수 있는 최선).
+function pickBestEnglishVoice(voices){
+  const enVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+  if(enVoices.length === 0) return null;
+
+  const preferredNamePatterns = [
+    /natural/i, /neural/i, /premium/i, /enhanced/i, /online/i,
+    /google us english/i, /google uk english/i,
+    /samantha/i, /aria/i, /jenny/i, /guy/i, /zira/i, /ava/i
+  ];
+
+  function score(v){
+    let s = 0;
+    if(v.localService === false) s += 3; // 클라우드 기반 음성은 대체로 더 자연스러움
+    preferredNamePatterns.forEach(p => { if(p.test(v.name)) s += 2; });
+    if(/compact/i.test(v.name)) s -= 2; // "Compact" 버전은 보통 품질이 떨어짐
+    if(v.lang.toLowerCase() === 'en-us') s += 1; // 미국식 영어 약간 우대
+    return s;
+  }
+
+  return enVoices.slice().sort((a,b)=> score(b) - score(a))[0];
+}
+
 function speakText(text, rate, isRetry){
   if(!('speechSynthesis' in window)){
     showToast('이 브라우저는 음성 재생을 지원하지 않아요. Chrome 브라우저를 사용해주세요.');
@@ -1929,9 +1988,9 @@ function speakText(text, rate, isRetry){
   utter.lang = 'en-US';
   utter.rate = rate;
 
-  // 영어 음성이 따로 있으면 명시적으로 지정 (일부 안드로이드 기기는 지정 안 하면 무음으로 실패함)
+  // 영어 음성 중 더 자연스러운 걸 우선 선택 (일부 안드로이드 기기는 지정 안 하면 무음으로 실패하기도 함)
   const voices = speechSynthesis.getVoices();
-  const enVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+  const enVoice = pickBestEnglishVoice(voices);
   if(enVoice) utter.voice = enVoice;
 
   let started = false;
@@ -1968,22 +2027,24 @@ function speakText(text, rate, isRetry){
 }
 
 function playShadowSentence(){
-  speakText(currentLevelData().shadow[shadowIndexForCurrent].en, shadowRate);
+  const list = todayContent.shadowing || FALLBACK_LOCAL.shadowing;
+  if(shadowIndexForCurrent === null){ showToast('문장을 불러오는 중이에요, 잠시 후 다시 시도해주세요'); return; }
+  speakText(list[shadowIndexForCurrent].en, shadowRate);
 }
-function resetShadowing(){
+async function resetShadowing(){
   // 인덱스는 오늘 사용량 기반으로 자동 계산되므로, 화면만 다시 그려주면 된다.
-  initShadowSentence();
+  await initShadowSentence();
 }
-function advanceShadowingOrFinish(){
+async function advanceShadowingOrFinish(){
   if((state.usage.shadowing||0) >= state.dailyLimit){
-    completeMission('shadowing');
+    await completeMission('shadowing');
   } else {
-    resetShadowing();
+    await resetShadowing();
   }
 }
-function skipToNextShadow(){
+async function skipToNextShadow(){
   clearAutoAdvance('shadow');
-  advanceShadowingOrFinish();
+  await advanceShadowingOrFinish();
 }
 
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2138,7 +2199,7 @@ async function scoreShadowing(transcript, durationSec){
   shadowScoringInProgress = true;
   try{
     // 화면에 보여지고 있는 문장의 인덱스를 고정값(shadowIndexForCurrent)으로 사용한다 - 재계산 타이밍 문제가 원천적으로 발생할 수 없다.
-    const targetSentence = currentLevelData().shadow[shadowIndexForCurrent].en;
+    const targetSentence = (todayContent.shadowing || FALLBACK_LOCAL.shadowing)[shadowIndexForCurrent].en;
 
     if(!shadowCreditConsumedForCurrent){
       const allowed = await useDailyCredit('shadowing');
@@ -2171,12 +2232,15 @@ let dictRate = 1.0;
 let dictCreditConsumedForCurrent = false;
 let dictScoringInProgress = false; // 중복 제출로 인한 경쟁 상태 방지
 let dictIndexForCurrent = null; // 지금 풀고 있는 문장의 인덱스를 고정해둔다 (재계산 타이밍 문제 방지)
-function prepareDictSentence(){
-  dictIndexForCurrent = currentDictIndex(); // 이 순간에 딱 한 번만 계산해서 고정
+async function prepareDictSentence(){
+  await ensureTodayContent();
+  const list = todayContent.dictation || FALLBACK_LOCAL.dictation;
+  dictIndexForCurrent = (state.usage.dictation || 0) % list.length; // 이 순간에 딱 한 번만 계산해서 고정
 }
 function currentDictSentence(){
-  if(dictIndexForCurrent === null) prepareDictSentence();
-  return currentLevelData().dict[dictIndexForCurrent];
+  const list = todayContent.dictation || FALLBACK_LOCAL.dictation;
+  if(dictIndexForCurrent === null) dictIndexForCurrent = (state.usage.dictation || 0) % list.length;
+  return list[dictIndexForCurrent];
 }
 function setDictRate(rate, el){
   dictRate = rate;
@@ -2186,8 +2250,8 @@ function setDictRate(rate, el){
 function playDictSentence(){
   speakText(currentDictSentence().en, dictRate);
 }
-function nextDictSentence(){
-  prepareDictSentence(); // 다음 문장 인덱스를 새로 고정
+async function nextDictSentence(){
+  await prepareDictSentence(); // 다음 문장 인덱스를 새로 고정
   document.getElementById('dict-input-en').value = '';
   document.getElementById('dict-input-ko').value = '';
   document.getElementById('dict-result').style.display = 'none';
@@ -2243,16 +2307,16 @@ async function submitDictation(){
     dictScoringInProgress = false;
   }
 }
-function advanceDictOrFinish(){
+async function advanceDictOrFinish(){
   if((state.usage.dictation||0) >= state.dailyLimit){
-    completeMission('dictation');
+    await completeMission('dictation');
   } else {
-    nextDictSentence();
+    await nextDictSentence();
   }
 }
-function skipToNextDict(){
+async function skipToNextDict(){
   clearAutoAdvance('dict');
-  advanceDictOrFinish();
+  await advanceDictOrFinish();
 }
 function renderDictResult(r, answer){
   let errHtml = r.spelling_errors && r.spelling_errors.length
@@ -2290,15 +2354,16 @@ function renderDictResult(r, answer){
 
 /* ================= PATTERN ================= */
 let patternStepIndex = 0;
-// 패턴 세트도 날짜(dayCount)에 따라 자동으로 다른 걸 골라준다 (레벨당 5세트 순환).
+// 오늘의 패턴 세트는 AI가 생성한 걸 그대로 쓴다 (이미 todayContent.pattern에 로드되어 있어야 함).
 function currentPatternSteps(){
-  const sets = currentLevelData().pattern;
-  const idx = ((state.dayCount||1) - 1) % sets.length;
-  return sets[idx];
+  return todayContent.pattern || FALLBACK_LOCAL.pattern;
 }
 
-function initPattern(){
+async function initPattern(){
   patternStepIndex = 0;
+  document.getElementById('pattern-current-sentence').textContent = '오늘의 패턴을 불러오는 중...';
+  document.getElementById('pattern-current-sentence-ko').textContent = '';
+  await ensureTodayContent();
   document.getElementById('pattern-current-sentence').textContent = currentPatternSteps()[0].en;
   document.getElementById('pattern-current-sentence-ko').textContent = currentPatternSteps()[0].ko;
   document.getElementById('pattern-own-sentence').value = '';
