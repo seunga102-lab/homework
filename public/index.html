@@ -567,7 +567,7 @@
 
     <div class="score-grid" style="margin-top:14px;">
       <div class="gauge-card"><div class="gauge-num" id="report-streak">0</div><div class="gauge-label">연속 학습일</div></div>
-      <div class="gauge-card"><div class="gauge-num" id="report-daycount">1</div><div class="gauge-label">가입 후 일수</div></div>
+      <div class="gauge-card"><div class="gauge-num" id="report-daycount">1</div><div class="gauge-label">학습 진도(일차)</div></div>
     </div>
 
     <div class="section-label">오늘의 미션 현황</div>
@@ -785,6 +785,14 @@ async function authFetch(url, options={}){
     showToast('세션이 만료됐어요. 다시 로그인해주세요.');
     logout();
     throw new Error('세션 만료');
+  }
+  if(res.status === 403){
+    const data = await res.clone().json().catch(()=>({}));
+    if(data.error && data.error.includes('수강이 중지')){
+      showToast(data.error);
+      logout();
+      throw new Error(data.error);
+    }
   }
   return res;
 }
@@ -1010,15 +1018,15 @@ function renderTeacherStudentList(students){
   const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', diary:'📔' };
   const html = students.map(s=>{
     const doneCount = Object.values(s.completed).filter(Boolean).length;
-    const statusColor = doneCount >= 3 ? 'var(--success)' : doneCount >= 1 ? 'var(--warning)' : 'var(--error)';
-    const statusDot = doneCount >= 3 ? '🟢' : doneCount >= 1 ? '🟡' : '🔴';
+    const statusDot = !s.active ? '⛔' : doneCount >= 3 ? '🟢' : doneCount >= 1 ? '🟡' : '🔴';
     const missionRow = Object.keys(missionIcons).map(type=>
       `<span style="opacity:${s.completed[type] ? 1 : 0.25}; font-size:16px; margin-right:6px;" title="${type}">${missionIcons[type]}</span>`
     ).join('');
+    const suspendedBadge = !s.active ? '<span class="tag" style="color:var(--error); border-color:#f3c8c8; margin-left:6px;">수강 중지됨</span>' : '';
     return `
-    <div class="card">
+    <div class="card" style="${!s.active ? 'opacity:.6;' : ''}">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:700; font-size:14.5px;">${statusDot} ${s.username}</span>
+        <span style="font-weight:700; font-size:14.5px;">${statusDot} ${s.username}${suspendedBadge}</span>
         <span style="font-size:12px; color:var(--ink-soft); font-weight:600;">Lv.${s.level} · ${s.dayCount.toLocaleString('ko-KR')}일차</span>
       </div>
       <div style="margin-top:8px;">${missionRow}<span style="font-size:12px; color:var(--ink-soft); margin-left:4px;">${doneCount}/4 완료</span></div>
@@ -1028,9 +1036,31 @@ function renderTeacherStudentList(students){
         <span>🗣️ ${s.usage.shadowing||0}/${s.dailyLimit}</span>
         <span>✍️ ${s.usage.dictation||0}/${s.dailyLimit}</span>
       </div>
+      <button class="btn ${s.active ? 'btn-secondary' : 'btn-primary'}" style="margin-top:10px; padding:8px 14px; font-size:13px;" onclick="toggleStudentActive('${s.username}', ${!s.active})">
+        ${s.active ? '수강 중지' : '수강 재개'}
+      </button>
     </div>`;
   }).join('');
   document.getElementById('teacher-student-list').innerHTML = html;
+}
+
+async function toggleStudentActive(username, makeActive){
+  const confirmMsg = makeActive
+    ? `${username} 학생의 수강을 다시 활성화할까요?`
+    : `${username} 학생의 수강을 중지할까요? 이후 로그인이 즉시 차단됩니다.`;
+  if(!confirm(confirmMsg)) return;
+  try{
+    const res = await authFetch(`/api/teacher/students/${encodeURIComponent(username)}/active`, {
+      method:'POST',
+      body: JSON.stringify({ active: makeActive })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || '상태 변경에 실패했어요.');
+    showToast(makeActive ? `${username} 학생 수강을 재개했어요` : `${username} 학생 수강을 중지했어요`);
+    openTeacherDashboard();
+  }catch(e){
+    showToast(e.message);
+  }
 }
 
 function showToast(msg){
@@ -1080,79 +1110,403 @@ function safeJsonParse(raw){
 const LEVELS = {
   1: { name:"Lv.1 입문", cefr:"CEFR A1",
     shadow:[
-      {en:"I am a student.", ko:"나는 학생이다."},
-      {en:"This is my book.", ko:"이것은 내 책이다."},
-      {en:"I like pizza.", ko:"나는 피자를 좋아한다."}
+      {en:"I am a student.",ko:"나는 학생이다."},
+      {en:"This is my book.",ko:"이것은 내 책이다."},
+      {en:"I like pizza.",ko:"나는 피자를 좋아한다."},
+      {en:"She is my sister.",ko:"그녀는 내 여동생이다."},
+      {en:"He has a dog.",ko:"그는 개가 있다."},
+      {en:"We are friends.",ko:"우리는 친구다."},
+      {en:"I am happy today.",ko:"나는 오늘 행복하다."},
+      {en:"This is a big house.",ko:"이것은 큰 집이다."},
+      {en:"I drink coffee every morning.",ko:"나는 매일 아침 커피를 마신다."},
+      {en:"My mom is a teacher.",ko:"우리 엄마는 선생님이다."},
+      {en:"The cat is sleeping.",ko:"고양이가 자고 있다."},
+      {en:"I go to school by bus.",ko:"나는 버스로 학교에 간다."},
+      {en:"It is raining outside.",ko:"밖에 비가 온다."},
+      {en:"I have two brothers.",ko:"나는 형제가 두 명 있다."},
+      {en:"This apple is sweet.",ko:"이 사과는 달다."},
+      {en:"He plays soccer on weekends.",ko:"그는 주말에 축구를 한다."},
+      {en:"I need some water.",ko:"나는 물이 좀 필요하다."},
+      {en:"She sings very well.",ko:"그녀는 노래를 아주 잘 부른다."},
+      {en:"The weather is nice today.",ko:"오늘 날씨가 좋다."},
+      {en:"I want a new phone.",ko:"나는 새 휴대폰을 원한다."},
+      {en:"My favorite color is blue.",ko:"내가 가장 좋아하는 색은 파란색이다."},
+      {en:"We watch movies together.",ko:"우리는 같이 영화를 본다."},
+      {en:"I can swim very well.",ko:"나는 수영을 아주 잘한다."},
+      {en:"This is my first time here.",ko:"여기 처음 왔다."},
+      {en:"She works at a hospital.",ko:"그녀는 병원에서 일한다."},
+      {en:"I feel tired today.",ko:"나는 오늘 피곤하다."},
+      {en:"He is reading a book.",ko:"그는 책을 읽고 있다."},
+      {en:"I love my family.",ko:"나는 우리 가족을 사랑한다."},
+      {en:"The food is delicious.",ko:"음식이 맛있다."},
+      {en:"I will call you later.",ko:"내가 나중에 전화할게."}
     ],
     dict:[
-      {en:"My name is Anna.", ko:"내 이름은 애나다."},
-      {en:"I have a cat.", ko:"나는 고양이가 있다."},
-      {en:"She is my friend.", ko:"그녀는 내 친구다."}
+      {en:"My name is Anna.",ko:"내 이름은 애나다."},
+      {en:"I have a cat.",ko:"나는 고양이가 있다."},
+      {en:"She is my friend.",ko:"그녀는 내 친구다."},
+      {en:"He lives in Seoul.",ko:"그는 서울에 산다."},
+      {en:"I eat breakfast at seven.",ko:"나는 7시에 아침을 먹는다."},
+      {en:"This is a nice day.",ko:"오늘은 좋은 날이다."},
+      {en:"We live near the park.",ko:"우리는 공원 근처에 산다."},
+      {en:"My father drives a car.",ko:"우리 아빠는 차를 운전한다."},
+      {en:"I study English every day.",ko:"나는 매일 영어를 공부한다."},
+      {en:"The dog is very cute.",ko:"그 개는 정말 귀엽다."},
+      {en:"I like reading books.",ko:"나는 책 읽는 것을 좋아한다."},
+      {en:"She has long hair.",ko:"그녀는 머리가 길다."},
+      {en:"We go to the beach in summer.",ko:"우리는 여름에 해변에 간다."},
+      {en:"I wake up early.",ko:"나는 일찍 일어난다."},
+      {en:"He is a good cook.",ko:"그는 요리를 잘한다."},
+      {en:"This shirt is too small.",ko:"이 셔츠는 너무 작다."},
+      {en:"I have a lot of homework.",ko:"나는 숙제가 많다."},
+      {en:"She teaches math at school.",ko:"그녀는 학교에서 수학을 가르친다."},
+      {en:"We eat dinner at home.",ko:"우리는 집에서 저녁을 먹는다."},
+      {en:"I clean my room every weekend.",ko:"나는 주말마다 방을 청소한다."},
+      {en:"He likes playing video games.",ko:"그는 비디오 게임 하는 것을 좋아한다."},
+      {en:"My sister is younger than me.",ko:"내 여동생은 나보다 어리다."},
+      {en:"I take the subway to work.",ko:"나는 지하철을 타고 출근한다."},
+      {en:"The store closes at nine.",ko:"그 가게는 9시에 문을 닫는다."},
+      {en:"She always arrives on time.",ko:"그녀는 항상 제시간에 온다."},
+      {en:"I forgot my umbrella.",ko:"나는 우산을 깜빡했다."},
+      {en:"He can speak two languages.",ko:"그는 두 개의 언어를 할 수 있다."},
+      {en:"We usually walk to school.",ko:"우리는 보통 학교에 걸어간다."},
+      {en:"I bought a new bag yesterday.",ko:"나는 어제 새 가방을 샀다."},
+      {en:"This coffee is really hot.",ko:"이 커피는 정말 뜨겁다."}
     ],
     pattern:[{en:"I like...",ko:"나는 좋아해..."},{en:"I like pizza.",ko:"나는 피자를 좋아해."},{en:"I like pizza and pasta.",ko:"나는 피자랑 파스타를 좋아해."}]
   },
   2: { name:"Lv.2 초급", cefr:"CEFR A2",
     shadow:[
-      {en:"I usually wake up at seven.", ko:"나는 보통 7시에 일어난다."},
-      {en:"Can you help me with this?", ko:"이거 좀 도와줄 수 있어?"},
-      {en:"I'm going to the store later.", ko:"나는 이따가 가게에 갈 거야."}
+      {en:"I usually wake up at seven.",ko:"나는 보통 7시에 일어난다."},
+      {en:"Can you help me with this?",ko:"이거 좀 도와줄 수 있어?"},
+      {en:"I'm going to the store later.",ko:"나는 이따가 가게에 갈 거야."},
+      {en:"She went to the movies yesterday.",ko:"그녀는 어제 영화 보러 갔다."},
+      {en:"We will meet at the café.",ko:"우리는 카페에서 만날 거야."},
+      {en:"I didn't sleep well last night.",ko:"나는 어젯밤에 잠을 잘 못 잤다."},
+      {en:"He is going to visit his grandma.",ko:"그는 할머니를 방문할 거야."},
+      {en:"Could you pass me the salt?",ko:"소금 좀 건네줄래?"},
+      {en:"I have never been to Japan.",ko:"나는 일본에 가본 적이 없다."},
+      {en:"She was very tired after work.",ko:"그녀는 퇴근 후 아주 피곤했다."},
+      {en:"We are planning a trip next month.",ko:"우리는 다음 달에 여행을 계획하고 있다."},
+      {en:"I forgot to bring my umbrella.",ko:"나는 우산 가져오는 걸 깜빡했다."},
+      {en:"He usually comes home late.",ko:"그는 보통 늦게 집에 온다."},
+      {en:"Do you want to join us for lunch?",ko:"우리랑 같이 점심 먹을래?"},
+      {en:"I was born in March.",ko:"나는 3월에 태어났다."},
+      {en:"She is learning to play the piano.",ko:"그녀는 피아노 배우는 중이다."},
+      {en:"We should leave before it gets dark.",ko:"어두워지기 전에 출발해야 해."},
+      {en:"I have already finished my homework.",ko:"나는 숙제를 이미 끝냈다."},
+      {en:"He looked really surprised.",ko:"그는 정말 놀란 것처럼 보였다."},
+      {en:"I will pick you up at six.",ko:"내가 6시에 데리러 갈게."},
+      {en:"She doesn't like spicy food.",ko:"그녀는 매운 음식을 안 좋아한다."},
+      {en:"We had a great time at the party.",ko:"우리는 파티에서 즐거운 시간을 보냈다."},
+      {en:"I need to buy some new shoes.",ko:"나는 새 신발을 좀 사야 해."},
+      {en:"He is talking on the phone right now.",ko:"그는 지금 전화통화 중이다."},
+      {en:"I usually take a shower before bed.",ko:"나는 보통 자기 전에 샤워를 한다."},
+      {en:"She has been studying for three hours.",ko:"그녀는 세 시간째 공부하고 있다."},
+      {en:"We are looking forward to the weekend.",ko:"우리는 주말을 기대하고 있다."},
+      {en:"I can't find my keys anywhere.",ko:"열쇠를 어디서도 못 찾겠어."},
+      {en:"He apologized for being late.",ko:"그는 늦은 것에 대해 사과했다."},
+      {en:"I would like to order a coffee.",ko:"커피 한 잔 주문하고 싶어요."}
     ],
     dict:[
-      {en:"What time does the movie start?", ko:"영화가 몇 시에 시작해?"},
-      {en:"I need to buy some groceries.", ko:"나는 식료품을 좀 사야 해."},
-      {en:"He works at a hospital.", ko:"그는 병원에서 일한다."}
+      {en:"What time does the movie start?",ko:"영화가 몇 시에 시작해?"},
+      {en:"I need to buy some groceries.",ko:"나는 식료품을 좀 사야 해."},
+      {en:"He works at a hospital.",ko:"그는 병원에서 일한다."},
+      {en:"She is going to call you tonight.",ko:"그녀는 오늘 밤 너한테 전화할 거야."},
+      {en:"We watched a documentary last night.",ko:"우리는 어젯밤에 다큐멘터리를 봤다."},
+      {en:"I haven't decided yet.",ko:"나는 아직 결정하지 않았어."},
+      {en:"He always arrives early for meetings.",ko:"그는 항상 회의에 일찍 온다."},
+      {en:"Can I borrow your pen for a second?",ko:"잠깐 펜 좀 빌릴 수 있을까?"},
+      {en:"She moved to a new apartment.",ko:"그녀는 새 아파트로 이사했다."},
+      {en:"We are having a barbecue this weekend.",ko:"우리는 이번 주말에 바비큐를 할 거야."},
+      {en:"I usually check my email in the morning.",ko:"나는 보통 아침에 이메일을 확인한다."},
+      {en:"He was worried about the exam.",ko:"그는 시험에 대해 걱정했다."},
+      {en:"Let's meet in front of the station.",ko:"역 앞에서 만나자."},
+      {en:"I have to finish this report by Friday.",ko:"나는 금요일까지 이 보고서를 끝내야 해."},
+      {en:"She is really good at drawing.",ko:"그녀는 그림을 정말 잘 그린다."},
+      {en:"We stayed up all night talking.",ko:"우리는 밤새 이야기했다."},
+      {en:"I think I left my phone at home.",ko:"핸드폰을 집에 두고 온 것 같아."},
+      {en:"He canceled the meeting yesterday.",ko:"그는 어제 회의를 취소했다."},
+      {en:"She is planning to study abroad.",ko:"그녀는 유학을 계획하고 있다."},
+      {en:"We need to hurry or we'll be late.",ko:"서두르지 않으면 늦을 거야."},
+      {en:"I just got back from vacation.",ko:"나는 방금 휴가에서 돌아왔어."},
+      {en:"He doesn't drink coffee at all.",ko:"그는 커피를 전혀 안 마신다."},
+      {en:"She sent me a message this morning.",ko:"그녀는 오늘 아침에 나한테 메시지를 보냈다."},
+      {en:"We are going camping next weekend.",ko:"우리는 다음 주말에 캠핑을 갈 거야."},
+      {en:"I couldn't sleep because of the noise.",ko:"소음 때문에 잠을 못 잤어."},
+      {en:"He is saving money for a new car.",ko:"그는 새 차를 사려고 돈을 모으고 있다."},
+      {en:"She always brings her own lunch.",ko:"그녀는 항상 자기 도시락을 가져온다."},
+      {en:"We should probably get going now.",ko:"우리 이제 슬슬 가야 할 것 같아."},
+      {en:"I just wanted to say thank you.",ko:"그냥 고맙다고 말하고 싶었어."},
+      {en:"He is afraid of heights.",ko:"그는 높은 곳을 무서워한다."}
     ],
     pattern:[{en:"I want to...",ko:"나는 ~하고 싶어..."},{en:"I want to learn English.",ko:"나는 영어를 배우고 싶어."},{en:"I want to learn English this year.",ko:"나는 올해 영어를 배우고 싶어."}]
   },
   3: { name:"Lv.3 초중급", cefr:"CEFR A2-B1",
     shadow:[
-      {en:"I'm the one who called you yesterday.", ko:"어제 너한테 전화한 사람이 나야."},
-      {en:"She's the kind of person who never gives up.", ko:"그녀는 절대 포기하지 않는 스타일의 사람이야."},
-      {en:"I can't believe you actually did that.", ko:"네가 진짜 그걸 했다니 믿을 수가 없어."}
+      {en:"I'm the one who called you yesterday.",ko:"어제 너한테 전화한 사람이 나야."},
+      {en:"She's the kind of person who never gives up.",ko:"그녀는 절대 포기하지 않는 스타일의 사람이야."},
+      {en:"I can't believe you actually did that.",ko:"네가 진짜 그걸 했다니 믿을 수가 없어."},
+      {en:"He's the guy who fixed my computer.",ko:"그가 내 컴퓨터를 고쳐준 사람이야."},
+      {en:"This is the restaurant where we first met.",ko:"여기가 우리가 처음 만난 식당이야."},
+      {en:"I wish I had more free time.",ko:"시간이 더 많았으면 좋겠어."},
+      {en:"If it rains, we'll stay inside.",ko:"비가 오면 우리는 실내에 있을 거야."},
+      {en:"She's the only one who understood me.",ko:"그녀만이 나를 이해해줬어."},
+      {en:"I don't know why he said that.",ko:"그가 왜 그렇게 말했는지 모르겠어."},
+      {en:"That's the movie everyone is talking about.",ko:"저게 다들 얘기하는 그 영화야."},
+      {en:"I used to live in a small town.",ko:"나는 예전에 작은 마을에 살았었어."},
+      {en:"He's someone you can really trust.",ko:"그는 정말 믿을 수 있는 사람이야."},
+      {en:"I'm not sure if I locked the door.",ko:"문을 잠갔는지 확실하지 않아."},
+      {en:"This is the book that changed my life.",ko:"이게 내 인생을 바꾼 책이야."},
+      {en:"She acts like nothing happened.",ko:"그녀는 아무 일도 없었던 것처럼 행동해."},
+      {en:"I'll let you know as soon as I hear back.",ko:"소식 들으면 바로 알려줄게."},
+      {en:"He's always the first one to arrive.",ko:"그는 항상 제일 먼저 도착해."},
+      {en:"I regret not studying harder in school.",ko:"학교 다닐 때 더 열심히 공부 안 한 게 후회돼."},
+      {en:"This is exactly what I was looking for.",ko:"이게 바로 내가 찾던 거야."},
+      {en:"She seems to know everyone in town.",ko:"그녀는 동네 사람들을 다 아는 것 같아."},
+      {en:"I can't remember where I put my keys.",ko:"열쇠를 어디 뒀는지 기억이 안 나."},
+      {en:"He's the type who plans everything ahead.",ko:"그는 모든 걸 미리 계획하는 타입이야."},
+      {en:"If I were you, I wouldn't say anything.",ko:"내가 너라면 아무 말도 안 할 거야."},
+      {en:"This is the hardest decision I've ever made.",ko:"이게 내가 내린 가장 어려운 결정이야."},
+      {en:"I ended up staying home all weekend.",ko:"결국 주말 내내 집에 있었어."},
+      {en:"She's been acting strange lately.",ko:"그녀는 요즘 좀 이상하게 행동해."},
+      {en:"I found out he was lying the whole time.",ko:"그가 계속 거짓말을 하고 있었다는 걸 알게 됐어."},
+      {en:"This place hasn't changed at all.",ko:"여기는 하나도 안 변했어."},
+      {en:"I'm getting used to the new schedule.",ko:"새 일정에 적응하고 있어."},
+      {en:"He never admits when he's wrong.",ko:"그는 자기가 틀렸을 때 절대 인정 안 해."}
     ],
     dict:[
-      {en:"I would have called you if I had known.", ko:"알았더라면 너한테 전화했을 텐데."},
-      {en:"We should have left earlier.", ko:"우리는 더 일찍 떠났어야 했어."},
-      {en:"He's been working here for five years.", ko:"그는 여기서 5년째 일하고 있어."}
+      {en:"I would have called you if I had known.",ko:"알았더라면 너한테 전화했을 텐데."},
+      {en:"We should have left earlier.",ko:"우리는 더 일찍 떠났어야 했어."},
+      {en:"He's been working here for five years.",ko:"그는 여기서 5년째 일하고 있어."},
+      {en:"I've never seen anything like this before.",ko:"이런 건 처음 봐."},
+      {en:"She might not come to the party tonight.",ko:"그녀는 오늘 밤 파티에 안 올 수도 있어."},
+      {en:"I was about to leave when you called.",ko:"네가 전화했을 때 막 나가려던 참이었어."},
+      {en:"He must have forgotten about our meeting.",ko:"그는 우리 회의를 잊어버린 게 틀림없어."},
+      {en:"I'm pretty sure I've met him before.",ko:"그를 전에 만난 적이 있는 것 같아."},
+      {en:"She apologized even though it wasn't her fault.",ko:"그녀 잘못이 아니었는데도 사과했어."},
+      {en:"We ran into each other at the mall.",ko:"우리는 쇼핑몰에서 우연히 마주쳤어."},
+      {en:"I can't help but worry about the results.",ko:"결과가 걱정되는 걸 어쩔 수가 없어."},
+      {en:"He decided to quit his job last month.",ko:"그는 지난달에 회사를 그만두기로 했어."},
+      {en:"I wonder what she's doing right now.",ko:"그녀가 지금 뭐 하고 있을지 궁금해."},
+      {en:"We were supposed to meet at noon.",ko:"우리는 정오에 만나기로 되어 있었어."},
+      {en:"I don't think that's a good idea.",ko:"그건 좋은 생각이 아닌 것 같아."},
+      {en:"She's always been good at making friends.",ko:"그녀는 항상 친구 사귀는 걸 잘했어."},
+      {en:"I just realized I forgot my wallet.",ko:"지갑을 놓고 온 걸 방금 깨달았어."},
+      {en:"He kept asking the same question.",ko:"그는 계속 같은 질문을 했어."},
+      {en:"I'm looking forward to seeing you soon.",ko:"곧 너를 볼 생각에 기대돼."},
+      {en:"She warned me not to trust him.",ko:"그녀는 그를 믿지 말라고 나한테 경고했어."},
+      {en:"We managed to finish just in time.",ko:"우리는 겨우 제시간에 끝냈어."},
+      {en:"I heard that he's moving to another city.",ko:"그가 다른 도시로 이사한다고 들었어."},
+      {en:"She refused to answer the question.",ko:"그녀는 그 질문에 답하기를 거부했어."},
+      {en:"I'm trying to figure out what went wrong.",ko:"뭐가 잘못됐는지 알아내려고 하는 중이야."},
+      {en:"He offered to help me move.",ko:"그는 이사하는 걸 도와주겠다고 했어."},
+      {en:"We couldn't agree on where to go.",ko:"우리는 어디로 갈지 합의를 못 봤어."},
+      {en:"I assume you already knew about this.",ko:"너는 이미 이걸 알고 있었을 거라고 생각해."},
+      {en:"She seemed upset about something.",ko:"그녀는 뭔가에 화가 난 것 같았어."},
+      {en:"I take it you're not coming, then.",ko:"그럼 안 온다는 뜻으로 받아들일게."},
+      {en:"He tends to overthink everything.",ko:"그는 뭐든 지나치게 생각하는 경향이 있어."}
     ],
     pattern:[{en:"I'm the one who...",ko:"~한 사람은 바로 나야..."},{en:"I'm the one who called you.",ko:"너한테 전화한 사람이 바로 나야."},{en:"I'm the one who called you yesterday.",ko:"어제 너한테 전화한 사람이 바로 나야."}]
   },
   4: { name:"Lv.4 중급", cefr:"CEFR B1",
     shadow:[
-      {en:"I think we should reconsider the plan.", ko:"우리 계획을 다시 생각해봐야 할 것 같아."},
-      {en:"It's important to stay focused on our goals.", ko:"우리 목표에 집중하는 게 중요해."},
-      {en:"I was wondering if you could help me out.", ko:"혹시 나 좀 도와줄 수 있을까 해서."}
+      {en:"I think we should reconsider the plan.",ko:"우리 계획을 다시 생각해봐야 할 것 같아."},
+      {en:"It's important to stay focused on our goals.",ko:"우리 목표에 집중하는 게 중요해."},
+      {en:"I was wondering if you could help me out.",ko:"혹시 나 좀 도와줄 수 있을까 해서."},
+      {en:"From my point of view, it's not worth the risk.",ko:"내 입장에서는, 그건 위험을 감수할 가치가 없어."},
+      {en:"There's no denying that things have changed.",ko:"상황이 바뀐 건 부인할 수 없어."},
+      {en:"As far as I know, the deadline hasn't changed.",ko:"내가 아는 한, 마감일은 안 바뀌었어."},
+      {en:"I have mixed feelings about this decision.",ko:"이 결정에 대해 복잡한 심정이야."},
+      {en:"It occurred to me that we might be wrong.",ko:"우리가 틀렸을 수도 있다는 생각이 들었어."},
+      {en:"Generally speaking, people prefer simple solutions.",ko:"일반적으로 말해서, 사람들은 간단한 해결책을 선호해."},
+      {en:"I'd rather stay in tonight than go out.",ko:"오늘 밤은 나가는 것보다 집에 있는 게 낫겠어."},
+      {en:"To be honest, I didn't expect this outcome.",ko:"솔직히, 이런 결과는 예상 못 했어."},
+      {en:"It seems like everyone has a different opinion.",ko:"다들 의견이 다른 것 같아."},
+      {en:"I can see why you'd feel that way.",ko:"네가 왜 그렇게 느끼는지 이해가 돼."},
+      {en:"On the other hand, there are some benefits.",ko:"반면에, 몇 가지 장점도 있어."},
+      {en:"It's not that I disagree, I just need more time.",ko:"동의 안 하는 게 아니라, 시간이 더 필요한 거야."},
+      {en:"I tend to overthink these kinds of decisions.",ko:"나는 이런 종류의 결정을 지나치게 생각하는 편이야."},
+      {en:"As a matter of fact, I already talked to her.",ko:"사실은, 나는 이미 그녀와 얘기했어."},
+      {en:"It's worth noting that the market has shifted.",ko:"시장이 바뀌었다는 걸 짚고 넘어갈 필요가 있어."},
+      {en:"I'm inclined to agree with your assessment.",ko:"네 평가에 동의하는 편이야."},
+      {en:"Regardless of the outcome, I'm proud of the effort.",ko:"결과와 상관없이, 노력한 게 자랑스러워."},
+      {en:"I can't shake the feeling that something's off.",ko:"뭔가 이상하다는 느낌을 떨칠 수가 없어."},
+      {en:"In hindsight, we should have planned better.",ko:"돌이켜보면, 계획을 더 잘 짰어야 했어."},
+      {en:"There's a chance this could backfire.",ko:"이게 역효과를 낼 가능성도 있어."},
+      {en:"I appreciate you being upfront about it.",ko:"그것에 대해 솔직하게 말해줘서 고마워."},
+      {en:"It's fair to say the project is behind schedule.",ko:"프로젝트가 일정보다 늦어졌다고 말하는 게 맞아."},
+      {en:"I don't see the point in arguing about this.",ko:"이걸로 논쟁하는 게 의미가 없다고 봐."},
+      {en:"Chances are, he already knows the answer.",ko:"아마 그는 이미 답을 알고 있을 거야."},
+      {en:"I have to admit, that's a fair point.",ko:"인정할게, 그건 타당한 지적이야."},
+      {en:"It's hard to say what will happen next.",ko:"다음에 무슨 일이 일어날지 말하기 어려워."},
+      {en:"I'd like to bring up a different issue.",ko:"다른 문제를 하나 얘기하고 싶어."}
     ],
     dict:[
-      {en:"In my opinion, this is the best solution.", ko:"내 생각엔 이게 최선의 해결책이야."},
-      {en:"I've been meaning to ask you something.", ko:"너한테 물어보고 싶은 게 있었어."},
-      {en:"The meeting has been postponed until next week.", ko:"회의가 다음 주로 미뤄졌어."}
+      {en:"In my opinion, this is the best solution.",ko:"내 생각엔 이게 최선의 해결책이야."},
+      {en:"I've been meaning to ask you something.",ko:"너한테 물어보고 싶은 게 있었어."},
+      {en:"The meeting has been postponed until next week.",ko:"회의가 다음 주로 미뤄졌어."},
+      {en:"It's not uncommon for people to feel nervous.",ko:"사람들이 긴장하는 건 흔한 일이야."},
+      {en:"I'd appreciate it if you could double-check this.",ko:"이거 다시 확인해주면 고맙겠어."},
+      {en:"We need to weigh the pros and cons first.",ko:"우리는 먼저 장단점을 따져봐야 해."},
+      {en:"He made a strong case for changing the strategy.",ko:"그는 전략을 바꿔야 한다고 설득력 있게 주장했어."},
+      {en:"I'm not entirely convinced this will work.",ko:"이게 통할 거라고 완전히 확신하진 않아."},
+      {en:"She raised a good point during the discussion.",ko:"그녀는 토론 중에 좋은 지적을 했어."},
+      {en:"It's easier said than done, honestly.",ko:"솔직히, 말은 쉽지 행동은 어려워."},
+      {en:"I don't want to jump to conclusions too quickly.",ko:"너무 빨리 결론을 내리고 싶지 않아."},
+      {en:"We ought to take this more seriously.",ko:"우리는 이걸 더 진지하게 받아들여야 해."},
+      {en:"He tends to avoid confrontation whenever possible.",ko:"그는 가능하면 대립을 피하는 편이야."},
+      {en:"I can see both sides of the argument.",ko:"나는 양쪽 주장을 다 이해할 수 있어."},
+      {en:"It's a matter of personal preference, really.",ko:"사실 그건 개인 취향의 문제야."},
+      {en:"She brought up some valid concerns.",ko:"그녀는 타당한 우려를 제기했어."},
+      {en:"I'd hate for this to cause any conflict.",ko:"이게 갈등을 일으키지 않았으면 좋겠어."},
+      {en:"We should probably touch base before the deadline.",ko:"마감 전에 다시 한번 얘기해봐야 할 것 같아."},
+      {en:"He's known for being extremely thorough.",ko:"그는 아주 꼼꼼한 걸로 유명해."},
+      {en:"I get the impression that she's hiding something.",ko:"그녀가 뭔가 숨기고 있다는 느낌이 들어."},
+      {en:"It's important not to take things personally.",ko:"뭐든 개인적으로 받아들이지 않는 게 중요해."},
+      {en:"We're still ironing out the details.",ko:"우리는 아직 세부 사항을 조율하는 중이야."},
+      {en:"He came across as a bit dismissive.",ko:"그는 좀 무시하는 태도로 보였어."},
+      {en:"I think it's worth exploring other options.",ko:"다른 선택지도 살펴볼 가치가 있다고 생각해."},
+      {en:"She handled the situation quite gracefully.",ko:"그녀는 그 상황을 꽤 우아하게 처리했어."},
+      {en:"It slipped my mind that we had plans tonight.",ko:"오늘 밤 약속이 있었다는 걸 깜빡했어."},
+      {en:"We're on the same page about this, I think.",ko:"우리는 이 문제에 대해 같은 생각인 것 같아."},
+      {en:"He has a tendency to exaggerate things.",ko:"그는 일을 과장하는 경향이 있어."},
+      {en:"I don't want to make a big deal out of it.",ko:"이걸 크게 만들고 싶지 않아."},
+      {en:"She's usually pretty level-headed about things.",ko:"그녀는 보통 일에 대해 꽤 침착한 편이야."}
     ],
     pattern:[{en:"What I really need is...",ko:"내게 정말 필요한 건..."},{en:"What I really need is more time.",ko:"내게 정말 필요한 건 시간이야."},{en:"What I really need is more time to finish this properly.",ko:"내게 정말 필요한 건 이걸 제대로 끝낼 시간이야."}]
   },
   5: { name:"Lv.5 중고급", cefr:"CEFR B1-B2",
     shadow:[
-      {en:"Honestly, I couldn't care less about that.", ko:"솔직히 난 그거 전혀 신경 안 써."},
-      {en:"It just so happens that I know the answer.", ko:"마침 내가 답을 알고 있어."},
-      {en:"The more I think about it, the less sense it makes.", ko:"생각하면 할수록 더 말이 안 돼."}
+      {en:"Honestly, I couldn't care less about that.",ko:"솔직히, 난 그거 전혀 신경 안 써."},
+      {en:"It just so happens that I know the answer.",ko:"마침 내가 답을 알고 있어."},
+      {en:"The more I think about it, the less sense it makes.",ko:"생각하면 할수록 더 말이 안 돼."},
+      {en:"I'll cross that bridge when I come to it.",ko:"그건 그때 가서 생각할게."},
+      {en:"She has a knack for saying the wrong thing.",ko:"그녀는 항상 딱 틀린 말을 하는 재주가 있어."},
+      {en:"I'm not about to let this slide.",ko:"이건 그냥 넘어가지 않을 거야."},
+      {en:"He's got a lot on his plate right now.",ko:"그는 지금 할 일이 산더미야."},
+      {en:"It's easier to point fingers than fix the problem.",ko:"문제를 고치는 것보다 손가락질하는 게 쉽지."},
+      {en:"I'll take that with a grain of salt.",ko:"그건 좀 걸러서 들을게."},
+      {en:"She really knows how to read the room.",ko:"그녀는 분위기 파악을 정말 잘해."},
+      {en:"I'm on the fence about this decision.",ko:"이 결정에 대해 아직 마음을 못 정했어."},
+      {en:"He tends to beat around the bush.",ko:"그는 빙빙 돌려서 말하는 경향이 있어."},
+      {en:"That's easier said than done, if you ask me.",ko:"내가 보기엔, 말이야 쉽지 행동은 어려워."},
+      {en:"I don't want to rock the boat right now.",ko:"지금은 평지풍파를 일으키고 싶지 않아."},
+      {en:"She hit the nail on the head with that comment.",ko:"그녀는 그 말로 정곡을 찔렀어."},
+      {en:"I'm trying to read between the lines here.",ko:"나는 지금 행간을 읽으려고 하고 있어."},
+      {en:"He always seems to land on his feet.",ko:"그는 항상 어떻게든 잘 헤쳐나가는 것 같아."},
+      {en:"Let's not beat around the bush about this.",ko:"이거에 대해 돌려 말하지 말자."},
+      {en:"I feel like I'm going around in circles.",ko:"제자리걸음을 하는 기분이야."},
+      {en:"She's the type to call a spade a spade.",ko:"그녀는 있는 그대로 말하는 스타일이야."},
+      {en:"I'm at a loss for what to do next.",ko:"다음에 뭘 해야 할지 막막해."},
+      {en:"He's clearly biting off more than he can chew.",ko:"그는 확실히 감당 못 할 일을 벌이고 있어."},
+      {en:"It's a blessing in disguise, if you think about it.",ko:"생각해보면, 그건 전화위복이야."},
+      {en:"I don't want to jinx it, but things are going well.",ko:"부정 타면 안 되지만, 일이 잘 되고 있어."},
+      {en:"She's always been a straight shooter.",ko:"그녀는 항상 직설적인 사람이었어."},
+      {en:"We're basically back to square one.",ko:"우리는 사실상 원점으로 돌아왔어."},
+      {en:"I'll give credit where credit is due.",ko:"인정할 건 인정할게."},
+      {en:"He's been walking on eggshells lately.",ko:"그는 요즘 조심조심 지내고 있어."},
+      {en:"It's a long shot, but it's worth trying.",ko:"가능성은 낮지만, 시도해볼 가치는 있어."},
+      {en:"She really put her foot in her mouth that time.",ko:"그녀는 그때 정말 실언을 했어."}
     ],
     dict:[
-      {en:"If I were in your shoes, I'd probably do the same.", ko:"내가 네 입장이었어도 아마 똑같이 했을 거야."},
-      {en:"There's no way I would have agreed to that.", ko:"내가 그거에 동의했을 리가 없어."},
-      {en:"It's not that I don't care, it's just complicated.", ko:"신경 안 쓰는 게 아니라 그냥 복잡한 거야."}
+      {en:"If I were in your shoes, I'd probably do the same.",ko:"내가 네 입장이었어도 아마 똑같이 했을 거야."},
+      {en:"There's no way I would have agreed to that.",ko:"내가 그거에 동의했을 리가 없어."},
+      {en:"It's not that I don't care, it's just complicated.",ko:"신경 안 쓰는 게 아니라 그냥 복잡한 거야."},
+      {en:"He has a way of making everything sound dramatic.",ko:"그는 모든 걸 극적으로 들리게 만드는 재주가 있어."},
+      {en:"I'm trying not to read too much into it.",ko:"너무 깊게 해석하지 않으려고 하고 있어."},
+      {en:"She's been under a lot of pressure lately.",ko:"그녀는 요즘 많은 부담을 받고 있어."},
+      {en:"I wouldn't put it past him to forget.",ko:"그가 깜빡할 수도 있다는 게 놀랍지 않아."},
+      {en:"We're not out of the woods yet.",ko:"우리는 아직 위기를 벗어난 게 아니야."},
+      {en:"He plays it pretty close to the vest.",ko:"그는 자기 속내를 잘 안 드러내는 편이야."},
+      {en:"I don't want to speak too soon, but it looks good.",ko:"너무 성급하게 말하고 싶지 않지만, 잘 되고 있는 것 같아."},
+      {en:"She has every right to be upset about this.",ko:"그녀가 이거에 화나는 건 당연한 권리야."},
+      {en:"It's not my place to say, but I'd be careful.",ko:"내가 말할 입장은 아니지만, 조심하는 게 좋을 것 같아."},
+      {en:"He's got a lot riding on this project.",ko:"그는 이 프로젝트에 많은 걸 걸고 있어."},
+      {en:"I can't put my finger on what's bothering me.",ko:"뭐가 나를 신경쓰이게 하는지 콕 집어 말 못 하겠어."},
+      {en:"She's the last person I'd expect to say that.",ko:"그녀는 그런 말을 할 거라고 가장 예상 못 한 사람이야."},
+      {en:"We're cutting it pretty close on time.",ko:"우리는 시간이 꽤 촉박해."},
+      {en:"He never fails to surprise me.",ko:"그는 항상 나를 놀라게 해."},
+      {en:"I'll take it one step at a time.",ko:"한 걸음씩 해나갈게."},
+      {en:"She doesn't take criticism very well.",ko:"그녀는 비판을 잘 못 받아들여."},
+      {en:"It's a fine line between confidence and arrogance.",ko:"자신감과 오만함 사이엔 미묘한 경계가 있어."},
+      {en:"I'm not trying to make excuses, but I was busy.",ko:"변명하려는 건 아닌데, 바빴어."},
+      {en:"He tends to jump to conclusions too fast.",ko:"그는 너무 빨리 결론을 내리는 경향이 있어."},
+      {en:"We should probably manage our expectations here.",ko:"우리는 여기서 기대치를 좀 조절해야 할 것 같아."},
+      {en:"She's got a point, even if I don't like it.",ko:"마음에 안 들어도, 그녀 말이 맞아."},
+      {en:"I'm just trying to keep an open mind about this.",ko:"그냥 이거에 대해 열린 마음을 가지려고 하는 거야."},
+      {en:"He's notorious for canceling plans last minute.",ko:"그는 마지막 순간에 약속 취소하는 걸로 유명해."},
+      {en:"It's easier to criticize than to actually help.",ko:"실제로 돕는 것보다 비판하는 게 쉬워."},
+      {en:"I don't take it personally anymore.",ko:"나는 이제 그걸 개인적으로 받아들이지 않아."},
+      {en:"She always manages to keep her cool.",ko:"그녀는 항상 침착함을 유지해."},
+      {en:"We'll figure it out as we go.",ko:"하다 보면 방법이 생길 거야."}
     ],
     pattern:[{en:"The thing is...",ko:"문제는 말이야..."},{en:"The thing is, I never actually agreed to this.",ko:"문제는, 나는 이거에 동의한 적이 없다는 거야."},{en:"The thing is, I never actually agreed to this in the first place.",ko:"문제는, 애초에 나는 이거에 동의한 적이 없다는 거야."}]
   },
   6: { name:"Lv.6 고급", cefr:"CEFR B2-C1",
     shadow:[
-      {en:"I wouldn't go so far as to say it was a failure.", ko:"그걸 실패라고까지 말하진 않을 거야."},
-      {en:"There's more to this story than meets the eye.", ko:"이 이야기엔 겉보기보다 더 많은 게 있어."},
-      {en:"We need to address the elephant in the room.", ko:"우리는 모두가 회피하는 그 문제를 짚고 넘어가야 해."}
+      {en:"I wouldn't go so far as to say it was a failure.",ko:"그걸 실패라고까지 말하진 않을 거야."},
+      {en:"There's more to this story than meets the eye.",ko:"이 이야기엔 겉보기보다 더 많은 게 있어."},
+      {en:"We need to address the elephant in the room.",ko:"우리는 모두가 회피하는 그 문제를 짚고 넘어가야 해."},
+      {en:"It's a moot point at this stage.",ko:"이 시점에서는 논할 가치가 없는 얘기야."},
+      {en:"He has a tendency to overstate his achievements.",ko:"그는 자신의 업적을 과장하는 경향이 있어."},
+      {en:"I'm inclined to take this with some skepticism.",ko:"나는 이걸 어느 정도 회의적으로 받아들이는 편이야."},
+      {en:"The implications of this decision are far-reaching.",ko:"이 결정의 파급 효과는 광범위해."},
+      {en:"She has an uncanny ability to defuse tension.",ko:"그녀는 긴장을 누그러뜨리는 놀라운 능력이 있어."},
+      {en:"It would be remiss of me not to mention the risks.",ko:"위험을 언급하지 않는다면 그건 나의 실수일 거야."},
+      {en:"We're treading a fine line between honesty and tact.",ko:"우리는 솔직함과 배려 사이에서 아슬아슬한 줄타기를 하고 있어."},
+      {en:"His argument, while compelling, overlooks key details.",ko:"그의 주장은 설득력 있지만, 핵심적인 부분을 간과하고 있어."},
+      {en:"I'd be remiss to ignore the elephant in the room.",ko:"모두가 회피하는 그 문제를 무시한다면 그건 실수일 거야."},
+      {en:"This raises more questions than it answers.",ko:"이건 답을 주는 것보다 더 많은 질문을 낳아."},
+      {en:"She navigated the negotiation with remarkable finesse.",ko:"그녀는 놀라운 수완으로 협상을 이끌었어."},
+      {en:"It's a classic case of correlation, not causation.",ko:"이건 인과관계가 아니라 전형적인 상관관계 사례야."},
+      {en:"We shouldn't conflate the two issues.",ko:"우리는 이 두 문제를 혼동해서는 안 돼."},
+      {en:"His reasoning, though flawed, isn't entirely baseless.",ko:"그의 논리는 결함이 있지만, 완전히 근거 없는 건 아니야."},
+      {en:"I find it hard to reconcile these two positions.",ko:"이 두 입장을 조화시키기가 어려워."},
+      {en:"The decision was, at best, a calculated gamble.",ko:"그 결정은 잘 봐줘도 계산된 도박이었어."},
+      {en:"She has a way of cutting through the noise.",ko:"그녀는 잡음을 뚫고 핵심에 도달하는 재주가 있어."},
+      {en:"It's worth playing devil's advocate here.",ko:"여기서 일부러 반대 입장을 취해보는 것도 가치가 있어."},
+      {en:"We're operating under a false sense of security.",ko:"우리는 잘못된 안도감 속에서 움직이고 있어."},
+      {en:"His credibility took a hit after that statement.",ko:"그 발언 이후 그의 신뢰도가 타격을 입었어."},
+      {en:"This is a textbook example of overreach.",ko:"이건 전형적인 과잉 대응의 예시야."},
+      {en:"I'm skeptical of any narrative that's too tidy.",ko:"나는 너무 깔끔하게 정리된 이야기는 회의적으로 봐."},
+      {en:"She tends to underestimate her own influence.",ko:"그녀는 자신의 영향력을 과소평가하는 경향이 있어."},
+      {en:"It's a slippery slope once you start making exceptions.",ko:"예외를 만들기 시작하면 걷잡을 수 없게 돼."},
+      {en:"We ought to scrutinize this more carefully.",ko:"우리는 이걸 더 신중하게 검토해야 해."},
+      {en:"His silence spoke volumes in that moment.",ko:"그 순간 그의 침묵은 많은 걸 말해줬어."},
+      {en:"This is symptomatic of a much larger problem.",ko:"이건 훨씬 더 큰 문제의 한 증상이야."}
     ],
     dict:[
-      {en:"Given the circumstances, I think we made the right call.", ko:"상황을 고려하면, 우리가 옳은 결정을 내린 것 같아."},
-      {en:"It's a slippery slope once you start making exceptions.", ko:"예외를 만들기 시작하면 걷잡을 수 없게 돼."},
-      {en:"At the end of the day, results speak louder than words.", ko:"결국엔 결과가 말보다 더 중요해."}
+      {en:"Given the circumstances, I think we made the right call.",ko:"상황을 고려하면, 우리가 옳은 결정을 내린 것 같아."},
+      {en:"At the end of the day, results speak louder than words.",ko:"결국엔 결과가 말보다 더 중요해."},
+      {en:"It's easy to underestimate how much this will cost.",ko:"이게 얼마나 비용이 들지 과소평가하기 쉬워."},
+      {en:"He has an unusual capacity for self-reflection.",ko:"그는 자기 성찰 능력이 남달라."},
+      {en:"This isn't the hill I'm willing to die on.",ko:"이건 내가 목숨 걸고 싸울 만한 문제는 아니야."},
+      {en:"We need to separate the signal from the noise.",ko:"우리는 진짜 중요한 것과 그렇지 않은 것을 구분해야 해."},
+      {en:"Her critique, though harsh, was largely accurate.",ko:"그녀의 비평은 가혹했지만 대체로 정확했어."},
+      {en:"It's disingenuous to claim you had no idea.",ko:"몰랐다고 주장하는 건 솔직하지 못한 거야."},
+      {en:"We're at an inflection point in this negotiation.",ko:"우리는 이 협상에서 전환점에 있어."},
+      {en:"His track record speaks for itself.",ko:"그의 실적이 모든 걸 말해줘."},
+      {en:"I wouldn't read too much into his silence.",ko:"그의 침묵을 너무 확대 해석하지 않을 거야."},
+      {en:"This decision sets a concerning precedent.",ko:"이 결정은 우려스러운 선례를 남겨."},
+      {en:"She's remarkably unfazed by criticism.",ko:"그녀는 놀라울 정도로 비판에 흔들리지 않아."},
+      {en:"It's a delicate balance between speed and accuracy.",ko:"속도와 정확성 사이엔 미묘한 균형이 필요해."},
+      {en:"We shouldn't lose sight of the bigger picture.",ko:"우리는 큰 그림을 놓쳐서는 안 돼."},
+      {en:"His assumptions, while reasonable, proved incorrect.",ko:"그의 가정은 합리적이었지만 틀린 것으로 드러났어."},
+      {en:"This warrants a closer look before we proceed.",ko:"진행하기 전에 이건 더 자세히 살펴볼 필요가 있어."},
+      {en:"She has a knack for asking the right questions.",ko:"그녀는 정확한 질문을 던지는 재주가 있어."},
+      {en:"It's a fine distinction, but an important one.",ko:"미묘한 차이지만, 중요한 차이야."},
+      {en:"We're essentially rehashing the same argument.",ko:"우리는 사실상 같은 논쟁을 되풀이하고 있어."},
+      {en:"His tone came across as more dismissive than intended.",ko:"그의 어조는 의도보다 더 무시하는 것처럼 들렸어."},
+      {en:"This approach, though unconventional, has merit.",ko:"이 접근법은 비전통적이지만 장점이 있어."},
+      {en:"We can't afford to be complacent at this stage.",ko:"이 단계에서 우리는 안주할 여유가 없어."},
+      {en:"Her feedback was blunt but ultimately constructive.",ko:"그녀의 피드백은 직설적이었지만 결국 건설적이었어."},
+      {en:"It's premature to draw any firm conclusions.",ko:"확실한 결론을 내리기엔 아직 일러."},
+      {en:"This underscores the importance of due diligence.",ko:"이건 신중한 검토의 중요성을 강조해."},
+      {en:"He seems to be grasping at straws here.",ko:"그는 여기서 지푸라기라도 잡으려는 것 같아."},
+      {en:"We should hold off until we have more clarity.",ko:"더 명확해질 때까지 미뤄야 할 것 같아."},
+      {en:"Her composure under pressure is impressive.",ko:"그녀가 압박 속에서 보여주는 침착함은 인상적이야."},
+      {en:"This is, in essence, a matter of trust.",ko:"이건 본질적으로 신뢰의 문제야."}
     ],
     pattern:[{en:"What strikes me is...",ko:"내가 놀란 건..."},{en:"What strikes me is how quickly things changed.",ko:"내가 놀란 건 상황이 얼마나 빨리 바뀌었는가야."},{en:"What strikes me is how quickly things changed once we committed to the plan.",ko:"내가 놀란 건, 우리가 계획을 실행하기로 하자마자 상황이 얼마나 빨리 바뀌었는가야."}]
   }
@@ -1187,25 +1541,37 @@ async function selectLevel(n){
     if(res.ok) applyUserState(data.user);
   }catch(e){ /* authFetch handles session expiry */ }
   renderLevelSelector();
-  // 레벨이 바뀌면 각 학습 화면의 진행 상태를 초기화
-  shadowIndex = 0; initShadowSentence();
-  dictIndex = 0;
-  patternStepIndex = 0; initPattern();
+  // 레벨이 바뀌면 각 학습 화면을 새로고침 (문장 인덱스는 날짜/사용량 기반으로 자동 계산됨)
+  initShadowSentence();
+  initPattern();
   showToast(currentLevelData().name + ' 콘텐츠로 전환했어요');
 }
 
 /* ================= SHADOWING ================= */
-let shadowIndex = 0;
 let shadowRate = 1.0;
 let shadowRecognizing = false;
 let shadowRecordStart = 0;
 let shadowRecognition = null;
 let shadowCreditConsumedForCurrent = false;
 
+// 문장 풀 안에서 오늘(dayCount)과 오늘 사용량에 따라 자동으로 다른 문장을 골라준다.
+// 하루에 3문장씩 진행하므로 (dayCount-1)*3 + 오늘 몇 번째인지 를 문장 풀 길이로 나눈 나머지를 사용한다.
+function currentShadowIndex(){
+  const pool = currentLevelData().shadow;
+  const usedToday = (state.usage && state.usage.shadowing) || 0;
+  return (((state.dayCount||1) - 1) * 3 + usedToday) % pool.length;
+}
+function currentDictIndex(){
+  const pool = currentLevelData().dict;
+  const usedToday = (state.usage && state.usage.dictation) || 0;
+  return (((state.dayCount||1) - 1) * 3 + usedToday) % pool.length;
+}
+
 function initShadowSentence(){
   const list = currentLevelData().shadow;
-  document.getElementById('shadow-sentence-en').textContent = list[shadowIndex].en;
-  document.getElementById('shadow-sentence-ko').textContent = list[shadowIndex].ko;
+  const idx = currentShadowIndex();
+  document.getElementById('shadow-sentence-en').textContent = list[idx].en;
+  document.getElementById('shadow-sentence-ko').textContent = list[idx].ko;
   document.getElementById('shadow-result').style.display = 'none';
   shadowCreditConsumedForCurrent = false;
   clearAutoAdvance('shadow');
@@ -1276,11 +1642,10 @@ function speakText(text, rate, isRetry){
 }
 
 function playShadowSentence(){
-  speakText(currentLevelData().shadow[shadowIndex].en, shadowRate);
+  speakText(currentLevelData().shadow[currentShadowIndex()].en, shadowRate);
 }
 function resetShadowing(){
-  const list = currentLevelData().shadow;
-  shadowIndex = (shadowIndex+1) % list.length;
+  // 인덱스는 오늘 사용량 기반으로 자동 계산되므로, 화면만 다시 그려주면 된다.
   initShadowSentence();
 }
 function advanceShadowingOrFinish(){
@@ -1438,6 +1803,10 @@ function scoreShadowManual(){
   scoreShadowing(val, 4);
 }
 async function scoreShadowing(transcript, durationSec){
+  // 주의: useDailyCredit()가 오늘 사용량을 증가시켜서 currentShadowIndex()의 결과가 바뀌므로,
+  // 지금 실제로 학생이 듣고 녹음한 "그 문장"을 먼저 확정해둔다.
+  const targetSentence = currentLevelData().shadow[currentShadowIndex()].en;
+
   if(!shadowCreditConsumedForCurrent){
     const allowed = await useDailyCredit('shadowing');
     if(!allowed){
@@ -1449,7 +1818,6 @@ async function scoreShadowing(transcript, durationSec){
     shadowCreditConsumedForCurrent = true;
   }
 
-  const targetSentence = currentLevelData().shadow[shadowIndex].en;
   const { accuracy, stress, intonation, wpm, diffHtml } = computeSpeechScore(targetSentence, transcript, durationSec);
 
   document.getElementById('score-accuracy').textContent = accuracy+'%';
@@ -1462,10 +1830,9 @@ async function scoreShadowing(transcript, durationSec){
 }
 
 /* ================= DICTATION ================= */
-let dictIndex = 0;
 let dictRate = 1.0;
 let dictCreditConsumedForCurrent = false;
-function currentDictSentence(){ return currentLevelData().dict[dictIndex]; }
+function currentDictSentence(){ return currentLevelData().dict[currentDictIndex()]; }
 function setDictRate(rate, el){
   dictRate = rate;
   document.querySelectorAll('#screen-dictation .speed-chip').forEach(c=>c.classList.remove('active'));
@@ -1475,8 +1842,7 @@ function playDictSentence(){
   speakText(currentDictSentence().en, dictRate);
 }
 function nextDictSentence(){
-  const list = currentLevelData().dict;
-  dictIndex = (dictIndex+1) % list.length;
+  // 인덱스는 오늘 사용량 기반으로 자동 계산되므로, 입력창/결과만 초기화하면 된다.
   document.getElementById('dict-input-en').value = '';
   document.getElementById('dict-input-ko').value = '';
   document.getElementById('dict-result').style.display = 'none';
@@ -1487,6 +1853,10 @@ async function submitDictation(){
   const en = document.getElementById('dict-input-en').value.trim();
   const ko = document.getElementById('dict-input-ko').value.trim();
   if(!en){ showToast('영어 문장을 입력해주세요'); return; }
+
+  // 주의: useDailyCredit()가 오늘 사용량을 증가시켜서 currentDictIndex()의 결과가 바뀌므로,
+  // 지금 실제로 학생이 풀고 있던 "그 문장"을 먼저 확정해둔다.
+  const answerSentence = currentDictSentence();
 
   if(!dictCreditConsumedForCurrent){
     const allowed = await useDailyCredit('dictation');
@@ -1505,7 +1875,7 @@ async function submitDictation(){
 
   const sys = `너는 영어 딕테이션 채점 AI다. 학생의 현재 레벨은 ${currentLevelData().name}(${currentLevelData().cefr})이다. 반드시 순수 JSON만 응답하고 다른 텍스트는 절대 포함하지 마라.
 형식: {"score": 0-100 숫자, "spelling_errors": [{"wrong":"","correct":""}], "grammar_note": "간단한 문법/연음/축약형 설명 (한글, 2문장 이내)", "ko_correct": true/false, "praise": "칭찬 한마디 (한글)"}`;
-  const user = `정답 문장: "${currentDictSentence().en}" (뜻: ${currentDictSentence().ko})
+  const user = `정답 문장: "${answerSentence.en}" (뜻: ${answerSentence.ko})
 학생이 입력한 영어: "${en}"
 학생이 입력한 한글 뜻: "${ko}"
 위 기준으로 채점해줘.`;
@@ -1513,7 +1883,7 @@ async function submitDictation(){
   try{
     const raw = await callClaude(sys, user);
     const result = safeJsonParse(raw);
-    renderDictResult(result);
+    renderDictResult(result, answerSentence);
   }catch(e){
     console.error('Dictation AI error:', e);
     document.getElementById('dict-result').innerHTML = '<div class="banner">AI 채점 중 오류가 발생했어요: ' + e.message + '<br><button class="btn btn-secondary" style="margin-top:10px;" onclick="submitDictation()">다시 시도</button></div>';
@@ -1533,12 +1903,10 @@ function skipToNextDict(){
   clearAutoAdvance('dict');
   advanceDictOrFinish();
 }
-function renderDictResult(r){
+function renderDictResult(r, answer){
   let errHtml = r.spelling_errors && r.spelling_errors.length
     ? r.spelling_errors.map(e=>`<span class="tag" style="color:var(--error); border-color:#f3c8c8;">${e.wrong} → ${e.correct}</span>`).join('')
     : '<span class="tag" style="color:var(--success);">철자 오류 없음 ✓</span>';
-
-  const answer = currentDictSentence();
 
   document.getElementById('dict-result').innerHTML = `
     <div class="card">
