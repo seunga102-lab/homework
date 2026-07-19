@@ -2,16 +2,14 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
 
-// 세션 토큰 서명용 비밀키. 배포 시 환경변수로 고정해두는 걸 강력 권장한다.
-// (설정 안 하면 서버 재시작마다 바뀌어서 모든 사용자가 다시 로그인해야 함)
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 if (!process.env.SESSION_SECRET) {
   console.warn('⚠️  SESSION_SECRET 환경변수가 설정되어 있지 않습니다. 서버가 재시작되면 모든 로그인 세션이 초기화됩니다.');
@@ -22,24 +20,36 @@ const DAILY_LIMIT = 3; // 쉐도잉/딕테이션 1일 학습 가능 문장 수
 // 선생님 계정으로 가입하려면 이 코드를 알아야 한다. 배포 시 환경변수로 반드시 바꿔서 사용할 것.
 const TEACHER_SIGNUP_CODE = process.env.TEACHER_SIGNUP_CODE || 'talkpro-teacher';
 
-/* ================= 간단한 파일 기반 사용자 DB ================= */
-// 참고: Render 무료 플랜은 디스크가 "재배포" 시 초기화된다. 실서비스 전환 시 실제 DB(PostgreSQL 등)로 교체 필요.
-const DATA_DIR = path.join(__dirname, 'data');
-const DB_PATH = path.join(DATA_DIR, 'db.json');
-
-function readDB() {
-  try {
-    if (!fs.existsSync(DB_PATH)) return { users: {} };
-    const raw = fs.readFileSync(DB_PATH, 'utf8');
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error('DB 읽기 오류:', e);
-    return { users: {} };
-  }
+/* ================= PostgreSQL 연결 (Neon 등) ================= */
+// 회원 정보/학습 기록을 실제 데이터베이스에 저장한다. 재배포해도 데이터가 사라지지 않는다.
+const DATABASE_URL = process.env.DATABASE_URL;
+let pool = null;
+if (DATABASE_URL) {
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: { rejectUnauthorized: false } // Neon 등 대부분의 매니지드 Postgres는 SSL 필수
+  });
+} else {
+  console.warn('⚠️  DATABASE_URL 환경변수가 설정되어 있지 않습니다. 회원가입/로그인 기능이 동작하지 않습니다.');
 }
-function writeDB(db) {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+
+async function initDB() {
+  if (!pool) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY,
+        salt TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'student',
+        data JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+    console.log('✅ 데이터베이스 테이블 준비 완료');
+  } catch (e) {
+    console.error('❌ 데이터베이스 초기화 오류:', e);
+  }
 }
 
 function todayKST() {
@@ -87,65 +97,115 @@ function verifyToken(token) {
   return username;
 }
 
-function defaultUserState(role) {
+function defaultUserData() {
   return {
-    role: role === 'teacher' ? 'teacher' : 'student',
     level: 3,
     levelChosen: false,
     xp: 0,
     streak: 0,
+    active: true, // false로 바뀌면 수강 중지 상태 - 로그인/모든 API 접근이 막힌다
+    progressDay: 1, // 실제로 그 날짜치를 완료해야만 다음 차수로 넘어가는 "진도" (달력 날짜와 무관)
     completed: { shadowing: false, dictation: false, pattern: false, diary: false },
     usage: { date: todayKST(), shadowing: 0, dictation: 0 },
     joinDate: todayKST()
   };
 }
-function rollUsageIfNeeded(user) {
+// 날짜가 바뀌었으면 오늘 미션/사용량을 초기화한다. data 객체를 직접 수정(mutate)한다.
+// 진도(progressDay)는 "이전 활동일에 쉐도잉/딕테이션을 하루치(3+3) 다 끝냈는가"에 따라서만 넘어간다.
+// 못 끝냈으면 다음에 접속했을 때 같은 차수를 이어서 하도록 progressDay를 그대로 유지한다.
+function rollUsageIfNeeded(data) {
   const today = todayKST();
-  if (!user.usage || user.usage.date !== today) {
-    user.usage = { date: today, shadowing: 0, dictation: 0 };
-    user.completed = { shadowing: false, dictation: false, pattern: false, diary: false };
+  let changed = false;
+  if (!data.usage || data.usage.date !== today) {
+    const finishedLastActiveDay = !!data.usage &&
+      data.usage.shadowing >= DAILY_LIMIT &&
+      data.usage.dictation >= DAILY_LIMIT;
+    if (finishedLastActiveDay) {
+      data.progressDay = (data.progressDay || 1) + 1;
+    }
+    // 못 끝냈으면 progressDay는 그대로 두어, 이어서 같은 차수를 진행하게 한다.
+    data.usage = { date: today, shadowing: 0, dictation: 0 };
+    data.completed = { shadowing: false, dictation: false, pattern: false, diary: false };
+    changed = true;
   }
-  if (!user.joinDate) {
-    user.joinDate = today; // 기존 계정에 가입일 정보가 없으면 오늘부터 1일차로 시작
+  if (!data.joinDate) {
+    data.joinDate = today;
+    changed = true;
   }
-  if (!user.role) {
-    user.role = 'student'; // 기존 계정 호환
+  if (!data.progressDay) {
+    data.progressDay = 1;
+    changed = true;
   }
+  if (data.active === undefined) {
+    data.active = true; // 기존 계정 호환
+    changed = true;
+  }
+  return changed;
 }
-function sanitizeUser(username, user) {
+function sanitizeUser(username, role, data) {
   return {
     username,
-    role: user.role || 'student',
-    level: user.level,
-    levelChosen: !!user.levelChosen,
-    xp: user.xp,
-    streak: user.streak,
-    completed: user.completed,
-    usage: user.usage,
+    role: role || 'student',
+    level: data.level,
+    levelChosen: !!data.levelChosen,
+    xp: data.xp,
+    streak: data.streak,
+    active: data.active !== false,
+    completed: data.completed,
+    usage: data.usage,
     dailyLimit: DAILY_LIMIT,
-    dayCount: daysSince(user.joinDate || todayKST())
+    dayCount: data.progressDay || 1
   };
 }
 
-function requireAuth(req, res, next) {
+/* ================= DB 접근 헬퍼 ================= */
+async function getUserRow(username) {
+  const result = await pool.query('SELECT username, salt, password_hash, role, data FROM users WHERE username = $1', [username]);
+  return result.rows[0] || null;
+}
+async function saveUserData(username, data) {
+  await pool.query('UPDATE users SET data = $1 WHERE username = $2', [JSON.stringify(data), username]);
+}
+async function createUserRow(username, salt, passwordHash, role, data) {
+  await pool.query(
+    'INSERT INTO users (username, salt, password_hash, role, data) VALUES ($1, $2, $3, $4, $5)',
+    [username, salt, passwordHash, role, JSON.stringify(data)]
+  );
+}
+
+function requireDB(req, res, next) {
+  if (!pool) {
+    return res.status(500).json({ error: 'DATABASE_URL이 서버에 설정되어 있지 않습니다. 배포 환경변수를 확인하세요.' });
+  }
+  next();
+}
+
+async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const username = verifyToken(token);
   if (!username) {
     return res.status(401).json({ error: '로그인이 필요하거나 세션이 만료됐어요. 다시 로그인해주세요.' });
   }
-  const db = readDB();
-  if (!db.users[username]) {
-    return res.status(401).json({ error: '계정을 찾을 수 없어요. 다시 로그인해주세요.' });
+  try {
+    const row = await getUserRow(username);
+    if (!row) {
+      return res.status(401).json({ error: '계정을 찾을 수 없어요. 다시 로그인해주세요.' });
+    }
+    if (row.role !== 'teacher' && row.data && row.data.active === false) {
+      return res.status(403).json({ error: '수강이 중지된 계정이에요. 담당 선생님께 문의해주세요.' });
+    }
+    req.username = username;
+    req.userRow = row; // { username, salt, password_hash, role, data }
+    next();
+  } catch (e) {
+    console.error('DB 조회 오류:', e);
+    res.status(500).json({ error: '서버 오류가 발생했습니다.' });
   }
-  req.username = username;
-  req.db = db;
-  next();
 }
 
 function requireTeacher(req, res, next) {
-  const user = req.db.users[req.username];
-  if (!user || user.role !== 'teacher') {
+  if (!req.userRow || req.userRow.role !== 'teacher') {
     return res.status(403).json({ error: '선생님 계정만 접근할 수 있어요.' });
   }
   next();
@@ -156,9 +216,9 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 /* ================= 인증 API ================= */
-app.post('/api/auth/signup', (req, res) => {
+app.post('/api/auth/signup', requireDB, async (req, res) => {
   const { username, password } = req.body || {};
-  const teacherCode = (req.body && req.body.teacherCode || '').trim();
+  const teacherCode = ((req.body && req.body.teacherCode) || '').trim();
   if (!username || !password) {
     return res.status(400).json({ error: '아이디와 비밀번호를 입력해주세요.' });
   }
@@ -172,97 +232,135 @@ app.post('/api/auth/signup', (req, res) => {
     return res.status(400).json({ error: '선생님 코드가 올바르지 않아요.' });
   }
 
-  const db = readDB();
-  if (db.users[username]) {
-    return res.status(409).json({ error: '이미 사용 중인 아이디예요.' });
+  try {
+    const existing = await getUserRow(username);
+    if (existing) {
+      return res.status(409).json({ error: '이미 사용 중인 아이디예요.' });
+    }
+
+    const role = teacherCode !== '' && teacherCode === TEACHER_SIGNUP_CODE.trim() ? 'teacher' : 'student';
+    const salt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = hashPassword(password, salt);
+    const data = defaultUserData();
+    await createUserRow(username, salt, passwordHash, role, data);
+
+    res.json({ token: createToken(username), user: sanitizeUser(username, role, data) });
+  } catch (e) {
+    console.error('회원가입 오류:', e);
+    res.status(500).json({ error: '회원가입 중 서버 오류가 발생했습니다.' });
   }
-
-  const role = teacherCode === TEACHER_SIGNUP_CODE.trim() && teacherCode !== '' ? 'teacher' : 'student';
-  const salt = crypto.randomBytes(16).toString('hex');
-  const passwordHash = hashPassword(password, salt);
-  db.users[username] = { salt, passwordHash, ...defaultUserState(role) };
-  writeDB(db);
-
-  res.json({ token: createToken(username), user: sanitizeUser(username, db.users[username]) });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', requireDB, async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: '아이디와 비밀번호를 입력해주세요.' });
   }
-  const db = readDB();
-  const user = db.users[username];
-  if (!user || !verifyPassword(password, user.salt, user.passwordHash)) {
-    return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않아요.' });
+  try {
+    const row = await getUserRow(username);
+    if (!row || !verifyPassword(password, row.salt, row.password_hash)) {
+      return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않아요.' });
+    }
+    const data = row.data;
+    if (data.active === false) {
+      return res.status(403).json({ error: '수강이 중지된 계정이에요. 담당 선생님께 문의해주세요.' });
+    }
+    if (rollUsageIfNeeded(data)) {
+      await saveUserData(username, data);
+    }
+    res.json({ token: createToken(username), user: sanitizeUser(username, row.role, data) });
+  } catch (e) {
+    console.error('로그인 오류:', e);
+    res.status(500).json({ error: '로그인 중 서버 오류가 발생했습니다.' });
   }
-  rollUsageIfNeeded(user);
-  writeDB(db);
-  res.json({ token: createToken(username), user: sanitizeUser(username, user) });
 });
 
-app.get('/api/me', requireAuth, (req, res) => {
-  const user = req.db.users[req.username];
-  rollUsageIfNeeded(user);
-  writeDB(req.db);
-  res.json({ user: sanitizeUser(req.username, user) });
+app.get('/api/me', requireAuth, async (req, res) => {
+  const data = req.userRow.data;
+  if (rollUsageIfNeeded(data)) {
+    await saveUserData(req.username, data);
+  }
+  res.json({ user: sanitizeUser(req.username, req.userRow.role, data) });
 });
 
-app.post('/api/me/level', requireAuth, (req, res) => {
+app.post('/api/me/level', requireAuth, async (req, res) => {
   const { level } = req.body || {};
   if (!Number.isInteger(level) || level < 1 || level > 6) {
     return res.status(400).json({ error: '레벨은 1~6 사이 숫자여야 해요.' });
   }
-  const user = req.db.users[req.username];
-  user.level = level;
-  user.levelChosen = true;
-  writeDB(req.db);
-  res.json({ user: sanitizeUser(req.username, user) });
+  const data = req.userRow.data;
+  data.level = level;
+  data.levelChosen = true;
+  await saveUserData(req.username, data);
+  res.json({ user: sanitizeUser(req.username, req.userRow.role, data) });
 });
 
-app.post('/api/me/progress', requireAuth, (req, res) => {
+app.post('/api/me/progress', requireAuth, async (req, res) => {
   const { xp, streak, completed } = req.body || {};
-  const user = req.db.users[req.username];
-  if (typeof xp === 'number') user.xp = xp;
-  if (typeof streak === 'number') user.streak = streak;
-  if (completed && typeof completed === 'object') user.completed = { ...user.completed, ...completed };
-  writeDB(req.db);
-  res.json({ user: sanitizeUser(req.username, user) });
+  const data = req.userRow.data;
+  if (typeof xp === 'number') data.xp = xp;
+  if (typeof streak === 'number') data.streak = streak;
+  if (completed && typeof completed === 'object') data.completed = { ...data.completed, ...completed };
+  await saveUserData(req.username, data);
+  res.json({ user: sanitizeUser(req.username, req.userRow.role, data) });
 });
 
 // 쉐도잉/딕테이션 하루 3개 제한 체크 및 소모
-app.post('/api/usage/increment', requireAuth, (req, res) => {
+app.post('/api/usage/increment', requireAuth, async (req, res) => {
   const { type } = req.body || {};
   if (type !== 'shadowing' && type !== 'dictation') {
     return res.status(400).json({ error: 'type은 shadowing 또는 dictation이어야 해요.' });
   }
-  const user = req.db.users[req.username];
-  rollUsageIfNeeded(user);
-  if (user.usage[type] >= DAILY_LIMIT) {
-    writeDB(req.db);
+  const data = req.userRow.data;
+  rollUsageIfNeeded(data);
+  if (data.usage[type] >= DAILY_LIMIT) {
+    await saveUserData(req.username, data);
     return res.json({ allowed: false, remaining: 0, limit: DAILY_LIMIT });
   }
-  user.usage[type] += 1;
-  writeDB(req.db);
-  res.json({ allowed: true, remaining: DAILY_LIMIT - user.usage[type], limit: DAILY_LIMIT });
+  data.usage[type] += 1;
+  await saveUserData(req.username, data);
+  res.json({ allowed: true, remaining: DAILY_LIMIT - data.usage[type], limit: DAILY_LIMIT });
 });
 
 /* ================= 선생님 API ================= */
-app.get('/api/teacher/students', requireAuth, requireTeacher, (req, res) => {
-  const db = req.db;
-  let changed = false;
-  const students = Object.keys(db.users)
-    .filter(username => (db.users[username].role || 'student') === 'student')
-    .map(username => {
-      const user = db.users[username];
-      const beforeDate = user.usage && user.usage.date;
-      rollUsageIfNeeded(user);
-      if (beforeDate !== user.usage.date) changed = true;
-      return sanitizeUser(username, user);
-    })
-    .sort((a, b) => a.username.localeCompare(b.username));
-  if (changed) writeDB(db);
-  res.json({ students });
+app.get('/api/teacher/students', requireAuth, requireTeacher, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT username, role, data FROM users WHERE role = 'student' ORDER BY username ASC");
+    const students = [];
+    for (const row of result.rows) {
+      const data = row.data;
+      if (rollUsageIfNeeded(data)) {
+        await saveUserData(row.username, data);
+      }
+      students.push(sanitizeUser(row.username, row.role, data));
+    }
+    res.json({ students });
+  } catch (e) {
+    console.error('학생 목록 조회 오류:', e);
+    res.status(500).json({ error: '학생 목록을 불러오지 못했습니다.' });
+  }
+});
+
+// 학생 수강 중지/재개 (선생님 전용). 중지되면 그 학생은 로그인 및 모든 기능 접근이 즉시 막힌다.
+app.post('/api/teacher/students/:username/active', requireAuth, requireTeacher, async (req, res) => {
+  const targetUsername = req.params.username;
+  const { active } = req.body || {};
+  if (typeof active !== 'boolean') {
+    return res.status(400).json({ error: 'active 값은 true 또는 false여야 해요.' });
+  }
+  try {
+    const row = await getUserRow(targetUsername);
+    if (!row || row.role !== 'student') {
+      return res.status(404).json({ error: '학생을 찾을 수 없어요.' });
+    }
+    const data = row.data;
+    data.active = active;
+    await saveUserData(targetUsername, data);
+    res.json({ student: sanitizeUser(targetUsername, row.role, data) });
+  } catch (e) {
+    console.error('수강 상태 변경 오류:', e);
+    res.status(500).json({ error: '수강 상태를 변경하지 못했습니다.' });
+  }
 });
 
 /* ================= AI 프록시 엔드포인트 ================= */
@@ -327,18 +425,31 @@ app.post('/api/ai', requireAuth, async (req, res) => {
 });
 
 // 헬스체크 (배포 플랫폼이 앱 상태를 확인할 때 사용)
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  let dbConnected = false;
+  if (pool) {
+    try {
+      await pool.query('SELECT 1');
+      dbConnected = true;
+    } catch (e) {
+      dbConnected = false;
+    }
+  }
   res.json({
     status: 'ok',
     ai_configured: !!ANTHROPIC_API_KEY,
     session_secret_configured: !!process.env.SESSION_SECRET,
-    teacher_code_configured: !!process.env.TEACHER_SIGNUP_CODE
+    teacher_code_configured: !!process.env.TEACHER_SIGNUP_CODE,
+    database_configured: !!DATABASE_URL,
+    database_connected: dbConnected
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Talk Pro server running on http://localhost:${PORT}`);
-  if (!ANTHROPIC_API_KEY) {
-    console.warn('⚠️  ANTHROPIC_API_KEY가 설정되지 않았습니다. AI 첨삭 기능이 동작하지 않습니다.');
-  }
+initDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Talk Pro server running on http://localhost:${PORT}`);
+    if (!ANTHROPIC_API_KEY) {
+      console.warn('⚠️  ANTHROPIC_API_KEY가 설정되지 않았습니다. AI 첨삭 기능이 동작하지 않습니다.');
+    }
+  });
 });
