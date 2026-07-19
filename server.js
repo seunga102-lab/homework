@@ -243,8 +243,9 @@ function verifyToken(token) {
   return username;
 }
 
-function defaultUserData() {
+function defaultUserData(name) {
   return {
+    name: (name || '').trim(),
     level: 3,
     levelChosen: false,
     xp: 0,
@@ -291,11 +292,16 @@ function rollUsageIfNeeded(data) {
     data.history = []; // 기존 계정 호환
     changed = true;
   }
+  if (data.name === undefined) {
+    data.name = ''; // 기존 계정 호환 (이름 필드 추가 이전 가입자)
+    changed = true;
+  }
   return changed;
 }
 function sanitizeUser(username, role, data) {
   return {
     username,
+    name: data.name || '',
     role: role || 'student',
     level: data.level,
     levelChosen: !!data.levelChosen,
@@ -369,9 +375,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 /* ================= 인증 API ================= */
 app.post('/api/auth/signup', requireDB, async (req, res) => {
   const { username, password } = req.body || {};
+  const name = ((req.body && req.body.name) || '').trim();
   const teacherCode = ((req.body && req.body.teacherCode) || '').trim();
   if (!username || !password) {
     return res.status(400).json({ error: '아이디와 비밀번호를 입력해주세요.' });
+  }
+  if (!name) {
+    return res.status(400).json({ error: '이름을 입력해주세요.' });
+  }
+  if (name.length > 30) {
+    return res.status(400).json({ error: '이름은 30자 이내로 입력해주세요.' });
   }
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
     return res.status(400).json({ error: '아이디는 영문/숫자/밑줄만 사용해 3~20자로 입력해주세요.' });
@@ -392,7 +405,7 @@ app.post('/api/auth/signup', requireDB, async (req, res) => {
     const role = teacherCode !== '' && teacherCode === TEACHER_SIGNUP_CODE.trim() ? 'teacher' : 'student';
     const salt = crypto.randomBytes(16).toString('hex');
     const passwordHash = hashPassword(password, salt);
-    const data = defaultUserData();
+    const data = defaultUserData(name);
     await createUserRow(username, salt, passwordHash, role, data);
 
     res.json({ token: createToken(username), user: sanitizeUser(username, role, data) });
