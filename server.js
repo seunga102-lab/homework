@@ -46,6 +46,13 @@ async function initDB() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS daily_content (
+        content_key TEXT PRIMARY KEY,
+        content JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
     console.log('✅ 데이터베이스 테이블 준비 완료');
   } catch (e) {
     console.error('❌ 데이터베이스 초기화 오류:', e);
@@ -62,6 +69,145 @@ function daysSince(dateStr) {
   const today = new Date(todayKST() + 'T00:00:00+09:00');
   const diffDays = Math.round((today - start) / (1000 * 60 * 60 * 24));
   return diffDays + 1;
+}
+
+/* ================= AI 기반 일일 콘텐츠 생성 (레벨당/타입당 하루에 한 번만 생성, 그 날 접속하는 모든 학생이 공유) ================= */
+const LEVEL_META = {
+  1: { name: 'Lv.1 입문', cefr: 'A1' },
+  2: { name: 'Lv.2 초급', cefr: 'A2' },
+  3: { name: 'Lv.3 초중급', cefr: 'A2-B1' },
+  4: { name: 'Lv.4 중급', cefr: 'B1' },
+  5: { name: 'Lv.5 중고급', cefr: 'B1-B2' },
+  6: { name: 'Lv.6 고급', cefr: 'B2-C1' }
+};
+
+// 최소한의 비상용 대체 콘텐츠 (AI 호출 자체가 실패했을 때만 사용됨)
+const FALLBACK_CONTENT = {
+  shadowing: [
+    { en: 'I am happy today.', ko: '나는 오늘 행복하다.' },
+    { en: "I'm not sure what to do next.", ko: '다음에 뭘 해야 할지 잘 모르겠어.' },
+    { en: "There's more to this than meets the eye.", ko: '이건 겉보기보다 더 많은 게 있어.' }
+  ],
+  dictation: [
+    { en: 'My name is Anna.', ko: '내 이름은 애나다.' },
+    { en: "I haven't decided yet.", ko: '나는 아직 결정하지 않았어.' },
+    { en: 'This warrants a closer look.', ko: '이건 더 자세히 살펴볼 필요가 있어.' }
+  ],
+  pattern: [
+    { en: 'I like...', ko: '나는 좋아해...' },
+    { en: 'I like pizza.', ko: '나는 피자를 좋아해.' },
+    { en: 'I like pizza and pasta.', ko: '나는 피자랑 파스타를 좋아해.' }
+  ]
+};
+
+async function callAnthropicRaw(systemPrompt, userPrompt) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }]
+    })
+  });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Anthropic API ${response.status}: ${errText}`);
+  }
+  const data = await response.json();
+  const text = (data.content || []).map((b) => b.text || '').filter(Boolean).join('\n');
+  if (!text) throw new Error('AI가 빈 응답을 반환했습니다.');
+  return text.replace(/```json|```/g, '').trim();
+}
+function safeJsonParseServer(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    const arrStart = raw.indexOf('[');
+    const arrEnd = raw.lastIndexOf(']');
+    // 배열 형태([...])와 객체 형태({...}) 둘 다 대비
+    if (arrStart !== -1 && arrEnd !== -1 && (start === -1 || arrStart < start)) {
+      return JSON.parse(raw.slice(arrStart, arrEnd + 1));
+    }
+    if (start !== -1 && end !== -1) {
+      return JSON.parse(raw.slice(start, end + 1));
+    }
+    throw e;
+  }
+}
+
+async function generateDailyContent(type, level) {
+  const meta = LEVEL_META[level];
+  if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY 미설정');
+
+  if (type === 'shadowing' || type === 'dictation') {
+    const purpose = type === 'shadowing'
+      ? '쉐도잉(듣고 따라 말하기) 연습용 문장'
+      : '딕테이션(듣고 받아쓰기) 연습용 문장';
+    const sys = `너는 영어 학습 콘텐츠 제작자다. ${meta.name}(${meta.cefr}) 수준 학생을 위한 ${purpose} 3개를 새로 만든다.
+- 실제 원어민이 일상 대화에서 자연스럽게 쓰는 표현으로 만들 것 (교과서적이지 않게)
+- 3개는 서로 다른 주제/문법 포인트를 다룰 것
+- 저작권 있는 특정 영화/드라마/노래 대사를 그대로 베끼지 말 것 (원본 문장을 새로 창작)
+- 반드시 순수 JSON 배열만 응답하고 다른 설명은 절대 포함하지 마라.
+형식: [{"en":"영어 문장","ko":"한글 뜻"},{"en":"...","ko":"..."},{"en":"...","ko":"..."}]`;
+    const raw = await callAnthropicRaw(sys, `${meta.name} 수준에 맞는 새로운 문장 3개를 만들어줘.`);
+    const parsed = safeJsonParseServer(raw);
+    if (!Array.isArray(parsed) || parsed.length < 3) throw new Error('AI 응답 형식이 올바르지 않습니다.');
+    return parsed.slice(0, 3).map((p) => ({ en: String(p.en || '').trim(), ko: String(p.ko || '').trim() }));
+  }
+
+  if (type === 'pattern') {
+    const sys = `너는 영어 학습 콘텐츠 제작자다. ${meta.name}(${meta.cefr}) 수준 학생을 위한 "패턴 학습" 세트 1개를 새로 만든다.
+패턴 학습은 짧은 시작 표현이 점점 길어지는 3단계 문장 세트다. 예시 스타일:
+STEP1: "I'm the one who..." (짧은 시작 표현, 미완성)
+STEP2: "I'm the one who called you." (완성된 짧은 문장)
+STEP3: "I'm the one who called you yesterday." (더 길고 구체적인 문장)
+- ${meta.cefr} 수준에 맞는 난이도의 실용적인 회화 패턴으로 만들 것
+- 저작권 있는 대사를 베끼지 말고 새로 창작할 것
+- 반드시 순수 JSON 배열 3개 항목만 응답하고 다른 설명은 절대 포함하지 마라.
+형식: [{"en":"STEP1 영어","ko":"STEP1 한글 뜻"},{"en":"STEP2 영어","ko":"STEP2 한글 뜻"},{"en":"STEP3 영어","ko":"STEP3 한글 뜻"}]`;
+    const raw = await callAnthropicRaw(sys, `${meta.name} 수준에 맞는 새로운 패턴 세트를 만들어줘.`);
+    const parsed = safeJsonParseServer(raw);
+    if (!Array.isArray(parsed) || parsed.length < 3) throw new Error('AI 응답 형식이 올바르지 않습니다.');
+    return parsed.slice(0, 3).map((p) => ({ en: String(p.en || '').trim(), ko: String(p.ko || '').trim() }));
+  }
+
+  throw new Error('알 수 없는 type: ' + type);
+}
+
+// 오늘/이 레벨/이 타입의 콘텐츠를 가져온다. 캐시에 있으면 재사용하고, 없으면 AI로 새로 생성해 캐시에 저장한다.
+// 같은 날 같은 레벨의 모든 학생이 동일한 콘텐츠를 공유하므로 AI 호출은 레벨당/타입당 하루 1회만 발생한다.
+async function getOrCreateDailyContent(type, level) {
+  const key = `${type}:${level}:${todayKST()}`;
+  const existing = await pool.query('SELECT content FROM daily_content WHERE content_key = $1', [key]);
+  if (existing.rows[0]) return existing.rows[0].content;
+
+  let content;
+  try {
+    content = await generateDailyContent(type, level);
+  } catch (e) {
+    console.error(`일일 콘텐츠 생성 실패 (${key}):`, e.message);
+    content = FALLBACK_CONTENT[type];
+  }
+
+  try {
+    await pool.query(
+      'INSERT INTO daily_content (content_key, content) VALUES ($1, $2) ON CONFLICT (content_key) DO NOTHING',
+      [key, JSON.stringify(content)]
+    );
+  } catch (e) {
+    console.error('일일 콘텐츠 저장 오류:', e);
+  }
+  // 동시에 여러 요청이 처음 생성을 시도했을 수 있으므로, 최종적으로 저장된(먼저 저장된) 버전을 다시 읽어 일관성 유지
+  const final = await pool.query('SELECT content FROM daily_content WHERE content_key = $1', [key]);
+  return final.rows[0] ? final.rows[0].content : content;
 }
 
 function hashPassword(password, salt) {
@@ -350,6 +496,25 @@ app.post('/api/usage/increment', requireAuth, async (req, res) => {
   data.usage[type] += 1;
   await saveUserData(req.username, data);
   res.json({ allowed: true, remaining: DAILY_LIMIT - data.usage[type], limit: DAILY_LIMIT });
+});
+
+// 오늘의 학습 콘텐츠(쉐도잉/딕테이션/패턴)를 가져온다. AI가 그날 처음 요청될 때 생성하고, 이후로는 캐시된 걸 재사용한다.
+app.get('/api/content/:type/:level', requireAuth, async (req, res) => {
+  const { type } = req.params;
+  const level = parseInt(req.params.level, 10);
+  if (!['shadowing', 'dictation', 'pattern'].includes(type)) {
+    return res.status(400).json({ error: 'type은 shadowing, dictation, pattern 중 하나여야 해요.' });
+  }
+  if (!Number.isInteger(level) || level < 1 || level > 6) {
+    return res.status(400).json({ error: 'level은 1~6 사이 숫자여야 해요.' });
+  }
+  try {
+    const content = await getOrCreateDailyContent(type, level);
+    res.json({ content });
+  } catch (e) {
+    console.error('콘텐츠 조회 오류:', e);
+    res.status(500).json({ error: '콘텐츠를 불러오지 못했습니다.', content: FALLBACK_CONTENT[type] });
+  }
 });
 
 /* ================= 선생님 API ================= */
