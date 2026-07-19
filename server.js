@@ -107,7 +107,8 @@ function defaultUserData() {
     progressDay: 1, // 실제로 그 날짜치를 완료해야만 다음 차수로 넘어가는 "진도" (달력 날짜와 무관)
     completed: { shadowing: false, dictation: false, pattern: false, diary: false },
     usage: { date: todayKST(), shadowing: 0, dictation: 0 },
-    joinDate: todayKST()
+    joinDate: todayKST(),
+    history: [] // 선생님이 볼 수 있는 학습 활동 기록 (문장, 점수, 작문 내용 등)
   };
 }
 // 날짜가 바뀌었으면 오늘 미션/사용량을 초기화한다. data 객체를 직접 수정(mutate)한다.
@@ -138,6 +139,10 @@ function rollUsageIfNeeded(data) {
   }
   if (data.active === undefined) {
     data.active = true; // 기존 계정 호환
+    changed = true;
+  }
+  if (!data.history) {
+    data.history = []; // 기존 계정 호환
     changed = true;
   }
   return changed;
@@ -305,6 +310,31 @@ app.post('/api/me/progress', requireAuth, async (req, res) => {
   res.json({ user: sanitizeUser(req.username, req.userRow.role, data) });
 });
 
+const HISTORY_MAX_LENGTH = 100; // 학생당 최근 100개 활동만 보관 (너무 커지는 것 방지)
+
+// 학습 활동 하나를 기록한다 (쉐도잉/딕테이션/패턴/일기 결과). 선생님이 학생 상세보기에서 확인할 수 있다.
+app.post('/api/me/history', requireAuth, async (req, res) => {
+  const { type, summary, detail, score } = req.body || {};
+  if (!type || !summary) {
+    return res.status(400).json({ error: 'type과 summary가 필요합니다.' });
+  }
+  const data = req.userRow.data;
+  if (!Array.isArray(data.history)) data.history = [];
+  data.history.unshift({
+    type,
+    summary: String(summary).slice(0, 500),
+    detail: detail ? String(detail).slice(0, 1000) : '',
+    score: typeof score === 'number' ? score : null,
+    date: todayKST(),
+    at: Date.now()
+  });
+  if (data.history.length > HISTORY_MAX_LENGTH) {
+    data.history = data.history.slice(0, HISTORY_MAX_LENGTH);
+  }
+  await saveUserData(req.username, data);
+  res.json({ ok: true });
+});
+
 // 쉐도잉/딕테이션 하루 3개 제한 체크 및 소모
 app.post('/api/usage/increment', requireAuth, async (req, res) => {
   const { type } = req.body || {};
@@ -360,6 +390,42 @@ app.post('/api/teacher/students/:username/active', requireAuth, requireTeacher, 
   } catch (e) {
     console.error('수강 상태 변경 오류:', e);
     res.status(500).json({ error: '수강 상태를 변경하지 못했습니다.' });
+  }
+});
+
+// 특정 학생의 학습 활동 기록(문장별 점수, 작문 내용 등)을 선생님이 조회한다.
+app.get('/api/teacher/students/:username/history', requireAuth, requireTeacher, async (req, res) => {
+  const targetUsername = req.params.username;
+  try {
+    const row = await getUserRow(targetUsername);
+    if (!row || row.role !== 'student') {
+      return res.status(404).json({ error: '학생을 찾을 수 없어요.' });
+    }
+    const data = row.data;
+    rollUsageIfNeeded(data);
+    res.json({
+      student: sanitizeUser(targetUsername, row.role, data),
+      history: Array.isArray(data.history) ? data.history : []
+    });
+  } catch (e) {
+    console.error('학생 기록 조회 오류:', e);
+    res.status(500).json({ error: '학생 기록을 불러오지 못했습니다.' });
+  }
+});
+
+// 학생 계정을 완전히 삭제한다 (되돌릴 수 없음). 삭제 후 같은 아이디로 다시 회원가입할 수 있다.
+app.delete('/api/teacher/students/:username', requireAuth, requireTeacher, async (req, res) => {
+  const targetUsername = req.params.username;
+  try {
+    const row = await getUserRow(targetUsername);
+    if (!row || row.role !== 'student') {
+      return res.status(404).json({ error: '학생을 찾을 수 없어요.' });
+    }
+    await pool.query('DELETE FROM users WHERE username = $1', [targetUsername]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('학생 삭제 오류:', e);
+    res.status(500).json({ error: '학생 삭제에 실패했습니다.' });
   }
 });
 
