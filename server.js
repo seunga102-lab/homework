@@ -73,12 +73,13 @@ function daysSince(dateStr) {
 
 /* ================= AI 기반 일일 콘텐츠 생성 (레벨당/타입당 하루에 한 번만 생성, 그 날 접속하는 모든 학생이 공유) ================= */
 const LEVEL_META = {
-  1: { name: 'Lv.1 입문', cefr: 'A1', goal: '단어 → 아주 짧은 문장', length: '3~5단어', grammar: 'Be동사, 일반동사 현재형만 사용', example: 'I am happy. / She likes coffee.' },
-  2: { name: 'Lv.2 초급', cefr: 'A2', goal: '일상 한 문장 말하기', length: '5~8단어', grammar: '현재, 과거, 미래 시제와 의문문', example: 'I usually go to work by bus.' },
-  3: { name: 'Lv.3 초중급', cefr: 'A2-B1', goal: '이유를 덧붙여 말하기', length: '8~12단어', grammar: 'because, when, if, can, want to 를 활용한 문장', example: 'I stayed home because it was raining.' },
+  1: { name: 'Lv.1 입문', cefr: 'A1', goal: '단어 → 아주 짧은 문장', length: '3~5단어', grammar: 'Be동사, 일반동사 현재형만 사용 (접속사·전치사구 사용 금지, 한 문장에 절 하나만)', vocab: '초등 저학년 수준의 아주 쉬운 기초 단어만 사용 (가족, 색깔, 숫자, 동물, 음식, 날씨, 일상 사물, 기본 동작 등). 2음절을 넘는 단어나 추상적인 단어는 피할 것', example: 'I am happy. / She likes coffee. / I have a dog.' },
+  2: { name: 'Lv.2 초급', cefr: 'A2', goal: '일상 한 문장 말하기', length: '5~8단어', grammar: '현재, 과거, 미래 시제와 단순 의문문만 사용 (관계대명사·접속사·분사 사용 금지, 한 문장에 절 하나만)', vocab: '초등학생도 이해할 수 있는 쉬운 일상 단어만 사용. 관용구, 비유적 표현, 어려운 어휘는 피할 것', example: 'I usually go to work by bus. / What time is it?' },
+  3: { name: 'Lv.3 초중급', cefr: 'A2-B1', goal: '이유를 덧붙여 말하기', length: '6~9단어', grammar: 'because, when, if, can, want to 중 하나만 사용해 절을 한 번만 연결 (여러 개를 한 문장에 겹쳐 쓰지 말 것)', vocab: '일상적이고 자주 쓰는 쉬운 단어 위주로 사용. 어렵거나 격식 있는 단어, 관용구는 피할 것', example: 'I stayed home because it was raining.' },
   4: { name: 'Lv.4 중급', cefr: 'B1', goal: '자연스럽게 대화하기', length: '10~15단어', grammar: '현재완료, 비교급, 관계대명사, 동명사', example: "I've never been to Japan, but I'd like to visit someday." },
   5: { name: 'Lv.5 중고급', cefr: 'B1-B2', goal: '의견과 경험 설명하기', length: '15~20단어', grammar: '가정법, 수동태, 분사구문 일부', example: 'If I had more time, I would learn another language.' },
-  6: { name: 'Lv.6 고급', cefr: 'B2-C1', goal: '원어민처럼 길게 말하기', length: '20단어 이상', grammar: '다양한 문장 연결어, 관용 표현, 자연스러운 어순', example: 'Although it was difficult at first, I eventually became comfortable speaking English.' }
+  6: { name: 'Lv.6 고급', cefr: 'B2-C1', goal: '원어민처럼 길게 말하기', length: '20단어 이상', grammar: '다양한 문장 연결어, 관용 표현, 자연스러운 어순', example: 'Although it was difficult at first, I eventually became comfortable speaking English.' },
+  7: { name: 'Lv.7 미국 MZ 슬랭', cefr: '슬랭·줄임말', goal: '미국 MZ세대(Gen Z)가 실생활/SNS/문자에서 쓰는 슬랭과 줄임말 익히기', length: '5~15단어 (슬랭 표현이 자연스럽게 들어간 문장)', grammar: '캐주얼한 구어체, 슬랭/줄임말을 실제 대화 맥락 속에서 사용', example: "Bro, that party was bussin, no cap." }
 };
 
 // 최소한의 비상용 대체 콘텐츠 (AI 호출 자체가 실패했을 때만 사용됨)
@@ -151,6 +152,15 @@ async function generateDailyContent(type, level) {
     const purpose = type === 'shadowing'
       ? '쉐도잉(듣고 따라 말하기) 연습용 문장'
       : '딕테이션(듣고 받아쓰기) 연습용 문장';
+    const isSlangLevel = level === 7;
+    const slangRules = isSlangLevel
+      ? `\n특별 규칙 (이 레벨 전용):
+- 이건 미국 MZ세대(Gen Z)가 실생활 대화, SNS, 문자에서 실제로 자주 쓰는 슬랭/줄임말 표현 학습이다.
+- 매번 다른 슬랭 표현을 하나 이상씩 자연스러운 문장 속에 포함시킬 것 (예: no cap, bet, lowkey, highkey, bussin, slay, rizz, iykyk, fr fr, sus, cap, bruh, goated, hits different, ghosted, simp, vibe check 등 — 매번 새로운 것 위주로)
+- 한글 뜻에는 문장 번역과 함께, 사용된 슬랭 표현의 의미를 괄호로 짧게 설명할 것 (예: "이 파티 진짜 대박이었어, 진짜야. (bussin=엄청 좋다/맛있다, no cap=진심이야))
+- 너무 오래되거나 안 쓰이는 슬랭 말고, 최근에도 실제로 쓰이는 표현 위주로 만들 것
+- 욕설, 비속어, 성적이거나 공격적인 표현은 절대 포함하지 말 것. 학생들이 배워도 괜찮은 캐주얼하고 건전한 슬랭만 사용할 것`
+      : '';
     const sys = `너는 영어 학습 콘텐츠 제작자다. 아래 레벨 기준에 정확히 맞는 ${purpose} 3개를 새로 만든다.
 
 레벨: ${meta.name} (${meta.cefr})
@@ -158,6 +168,8 @@ async function generateDailyContent(type, level) {
 문장 길이: 반드시 ${meta.length} 범위 안에서만 작성 (이 범위를 벗어나면 안 됨)
 사용 가능한 문법: ${meta.grammar}
 난이도 참고 예문: "${meta.example}"
+${meta.vocab ? "사용 어휘 제한: " + meta.vocab : ""}
+${slangRules}
 
 규칙:
 - 위 문장 길이 범위와 문법 수준을 절대 벗어나지 말 것 (더 쉽거나 더 어렵게 만들지 말 것)
@@ -173,6 +185,10 @@ async function generateDailyContent(type, level) {
   }
 
   if (type === 'pattern') {
+    const isSlangLevel = level === 7;
+    const slangPatternRules = isSlangLevel
+      ? `\n특별 규칙 (이 레벨 전용): STEP1~3에 미국 MZ세대 슬랭/줄임말 표현을 하나 포함시킬 것 (예: no cap, bet, lowkey, bussin, slay, rizz, iykyk, fr fr, sus, hits different 등). 한글 뜻에는 슬랭의 의미를 괄호로 짧게 설명할 것. 욕설, 비속어, 성적이거나 공격적인 표현은 절대 포함하지 말 것 — 건전하고 캐주얼한 슬랭만 사용할 것.`
+      : '';
     const sys = `너는 영어 학습 콘텐츠 제작자다. 아래 레벨 기준에 정확히 맞는 "패턴 학습" 세트 1개를 새로 만든다.
 패턴 학습은 짧은 시작 표현이 점점 길어지는 3단계 문장 세트다. 예시 스타일(형식 참고용, 난이도는 아래 기준을 따를 것):
 STEP1: "I'm the one who..." (짧은 시작 표현, 미완성)
@@ -184,6 +200,8 @@ STEP3: "I'm the one who called you yesterday." (더 길고 구체적인 문장)
 최종(STEP3) 문장 길이: 반드시 ${meta.length} 범위 안에서 작성
 사용 가능한 문법: ${meta.grammar}
 난이도 참고 예문: "${meta.example}"
+${meta.vocab ? "사용 어휘 제한: " + meta.vocab : ""}
+${slangPatternRules}
 
 규칙:
 - STEP3의 최종 문장이 위 문장 길이 범위와 문법 수준을 벗어나지 말 것
@@ -467,8 +485,8 @@ app.get('/api/me', requireAuth, async (req, res) => {
 
 app.post('/api/me/level', requireAuth, async (req, res) => {
   const { level } = req.body || {};
-  if (!Number.isInteger(level) || level < 1 || level > 6) {
-    return res.status(400).json({ error: '레벨은 1~6 사이 숫자여야 해요.' });
+  if (!Number.isInteger(level) || level < 1 || level > 7) {
+    return res.status(400).json({ error: '레벨은 1~7 사이 숫자여야 해요.' });
   }
   const data = req.userRow.data;
   data.level = level;
@@ -536,8 +554,8 @@ app.get('/api/content/:type/:level', requireAuth, async (req, res) => {
   if (!['shadowing', 'dictation', 'pattern'].includes(type)) {
     return res.status(400).json({ error: 'type은 shadowing, dictation, pattern 중 하나여야 해요.' });
   }
-  if (!Number.isInteger(level) || level < 1 || level > 6) {
-    return res.status(400).json({ error: 'level은 1~6 사이 숫자여야 해요.' });
+  if (!Number.isInteger(level) || level < 1 || level > 7) {
+    return res.status(400).json({ error: 'level은 1~7 사이 숫자여야 해요.' });
   }
   try {
     const content = await getOrCreateDailyContent(type, level);
