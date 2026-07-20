@@ -864,7 +864,7 @@ async function checkExistingSession(){
 function renderLevelSelectScreen(){
   const container = document.getElementById('level-select-list');
   container.innerHTML = '';
-  for(let i=1;i<=6;i++){
+  for(let i=1;i<=7;i++){
     const card = document.createElement('div');
     card.className = 'card mission-card';
     card.style.cursor = 'pointer';
@@ -1911,6 +1911,9 @@ const LEVELS = {
       [{en:"It's tempting to conclude that...",ko:"~라고 결론짓고 싶어져..."},{en:"It's tempting to conclude that he's wrong.",ko:"그가 틀렸다고 결론짓고 싶어져."},{en:"It's tempting to conclude that he's simply wrong.",ko:"그가 그냥 틀렸다고 결론짓고 싶어져."}],
       [{en:"What's often overlooked is...",ko:"종종 간과되는 건..."},{en:"What's often overlooked is the context.",ko:"종종 간과되는 건 맥락이야."},{en:"What's often overlooked is the broader context.",ko:"종종 간과되는 건 더 넓은 맥락이야."}]
     ]
+  },
+  7: { name:"Lv.7 미국 MZ 슬랭", cefr:"슬랭·줄임말",
+    shadow:[], dict:[], pattern:[[]]
   }
 };
 
@@ -1922,7 +1925,7 @@ function renderLevelSelector(){
     const row = document.getElementById(rowId);
     if(!row) return;
     row.innerHTML = '';
-    for(let i=1;i<=6;i++){
+    for(let i=1;i<=7;i++){
       const chip = document.createElement('div');
       chip.className = 'level-chip' + (state.level===i ? ' active':'');
       chip.textContent = 'Lv.'+i;
