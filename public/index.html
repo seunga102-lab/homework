@@ -1981,12 +1981,27 @@ function setShadowRate(rate, el){
 // 공용 TTS 함수: 안드로이드(특히 삼성인터넷 등)에서 speak()가 조용히 실패하는 문제를 최대한 방어한다.
 let currentUtterance = null; // 일부 브라우저는 참조가 사라지면(GC) 발화 중간에 소리가 끊기므로 전역에 유지
 let voicesReady = false;
+let ttsUnlocked = false; // 첫 사용자 터치/클릭 시 TTS 엔진을 미리 "깨워둔다" (안드로이드 활성화 문제 대응)
+let ttsKeepAliveTimer = null;
 
 function primeVoices(){
   if(!('speechSynthesis' in window)) return;
   const voices = speechSynthesis.getVoices();
   if(voices.length > 0) voicesReady = true;
   speechSynthesis.onvoiceschanged = ()=>{ voicesReady = true; };
+}
+
+// 페이지에서 처음 터치/클릭이 발생하면 아주 짧은 무음에 가까운 발화를 한 번 시도해서 TTS 엔진을 미리 활성화한다.
+// 일부 안드로이드 브라우저는 사용자 상호작용 직후 첫 speak() 호출만 씹어먹는 경우가 있어, 이 "예열"로 그 문제를 줄인다.
+function unlockTTSOnce(){
+  if(ttsUnlocked || !('speechSynthesis' in window)) return;
+  ttsUnlocked = true;
+  try{
+    const warm = new SpeechSynthesisUtterance(' ');
+    warm.volume = 0.01;
+    warm.rate = 10;
+    speechSynthesis.speak(warm);
+  }catch(e){ /* 무시 */ }
 }
 
 // 설치된 영어 음성들 중 더 자연스러운 것을 우선적으로 골라준다 (완전한 해결책은 아니지만 무료로 할 수 있는 최선).
@@ -2012,16 +2027,25 @@ function pickBestEnglishVoice(voices){
   return enVoices.slice().sort((a,b)=> score(b) - score(a))[0];
 }
 
-function speakText(text, rate, isRetry){
+function speakText(text, rate, retryCount){
+  retryCount = retryCount || 0;
   if(!('speechSynthesis' in window)){
     showToast('이 브라우저는 음성 재생을 지원하지 않아요. Chrome 브라우저를 사용해주세요.');
     return;
   }
-  speechSynthesis.cancel();
+
+  // 이전에 뭔가 말하고 있었을 때만 취소한다 (안드로이드 일부 기기는 불필요한 cancel() 호출 자체가
+  // 다음 speak()를 무음으로 만들어버리는 버그가 있어, 꼭 필요할 때만 호출한다).
+  if(speechSynthesis.speaking || speechSynthesis.pending){
+    try{ speechSynthesis.cancel(); }catch(e){ /* 무시 */ }
+  }
+  if(ttsKeepAliveTimer){ clearInterval(ttsKeepAliveTimer); ttsKeepAliveTimer = null; }
 
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = 'en-US';
   utter.rate = rate;
+  utter.volume = 1;
+  utter.pitch = 1;
 
   // 영어 음성 중 더 자연스러운 걸 우선 선택 (일부 안드로이드 기기는 지정 안 하면 무음으로 실패하기도 함)
   const voices = speechSynthesis.getVoices();
@@ -2029,12 +2053,26 @@ function speakText(text, rate, isRetry){
   if(enVoice) utter.voice = enVoice;
 
   let started = false;
-  utter.onstart = ()=>{ started = true; };
+  utter.onstart = ()=>{
+    started = true;
+    // 안드로이드 크롬은 약 15초 후 발화를 자동으로 멈춰버리는 버그가 있어, 말하는 동안 주기적으로 깨워준다.
+    ttsKeepAliveTimer = setInterval(()=>{
+      if(speechSynthesis.speaking){
+        try{ speechSynthesis.pause(); speechSynthesis.resume(); }catch(e){ /* 무시 */ }
+      } else {
+        clearInterval(ttsKeepAliveTimer); ttsKeepAliveTimer = null;
+      }
+    }, 4000);
+  };
+  utter.onend = ()=>{
+    if(ttsKeepAliveTimer){ clearInterval(ttsKeepAliveTimer); ttsKeepAliveTimer = null; }
+  };
   utter.onerror = (e)=>{
     console.error('TTS error:', e);
-    if(!isRetry){
-      // 첫 시도 실패 시 한 번 더 시도 (안드로이드 일부 브라우저는 음성 목록이 늦게 로드되어 첫 호출만 실패하는 경우가 있음)
-      setTimeout(()=> speakText(text, rate, true), 200);
+    if(ttsKeepAliveTimer){ clearInterval(ttsKeepAliveTimer); ttsKeepAliveTimer = null; }
+    if(retryCount < 2){
+      // 첫/두 번째 시도 실패 시 재시도 (안드로이드 일부 브라우저는 음성 목록이 늦게 로드되어 첫 호출만 실패하는 경우가 있음)
+      setTimeout(()=> speakText(text, rate, retryCount+1), 250 * (retryCount+1));
     } else {
       showToast('음성 재생에 실패했어요. 기기의 "설정 > 접근성 > TTS(글자 읽어주기)"에서 영어 음성이 설치되어 있는지 확인해주세요 🔊');
     }
@@ -2052,8 +2090,8 @@ function speakText(text, rate, isRetry){
   // 에러 이벤트조차 없이 그냥 무음일 수 있어, 일정 시간 내 시작 안 하면 재시도 또는 안내
   setTimeout(()=>{
     if(!started){
-      if(!isRetry){
-        speakText(text, rate, true);
+      if(retryCount < 2){
+        speakText(text, rate, retryCount+1);
       } else {
         showToast('소리가 안 들리면 기기의 "설정 > 접근성 > TTS(글자 읽어주기)"에서 영어 음성팩이 설치되어 있는지 확인해주세요 🔊');
       }
@@ -2643,6 +2681,9 @@ function renderDiaryResult(r, text){
 switchAuthTab('login');
 primeVoices();
 checkExistingSession();
+// 사용자의 첫 터치/클릭에서 TTS 엔진을 한 번 예열해둔다 (일부 안드로이드 브라우저의 활성화 문제 대응)
+document.addEventListener('touchstart', unlockTTSOnce, { once:true, passive:true });
+document.addEventListener('click', unlockTTSOnce, { once:true });
 </script>
 </body>
 </html>
