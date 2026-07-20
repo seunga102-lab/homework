@@ -98,6 +98,11 @@ const FALLBACK_CONTENT = {
     { en: 'I like...', ko: '나는 좋아해...' },
     { en: 'I like pizza.', ko: '나는 피자를 좋아해.' },
     { en: 'I like pizza and pasta.', ko: '나는 피자랑 파스타를 좋아해.' }
+  ],
+  scramble: [
+    { en: 'I usually go to work by bus.', ko: '나는 보통 버스로 출근한다.' },
+    { en: 'She likes to read books at night.', ko: '그녀는 밤에 책 읽는 것을 좋아한다.' },
+    { en: 'We are planning a trip next month.', ko: '우리는 다음 달에 여행을 계획하고 있다.' }
   ]
 };
 
@@ -148,10 +153,12 @@ async function generateDailyContent(type, level) {
   const meta = LEVEL_META[level];
   if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY 미설정');
 
-  if (type === 'shadowing' || type === 'dictation') {
+  if (type === 'shadowing' || type === 'dictation' || type === 'scramble') {
     const purpose = type === 'shadowing'
       ? '쉐도잉(듣고 따라 말하기) 연습용 문장'
-      : '딕테이션(듣고 받아쓰기) 연습용 문장';
+      : type === 'dictation'
+      ? '딕테이션(듣고 받아쓰기) 연습용 문장'
+      : '문장 재구성 게임(섞인 단어를 순서대로 배열하는 게임)용 문장 - 단어 하나하나가 명확히 구분되는 자연스러운 문장';
     const isSlangLevel = level === 7;
     const slangRules = isSlangLevel
       ? `\n특별 규칙 (이 레벨 전용):
@@ -288,7 +295,7 @@ function defaultUserData(name) {
     streak: 0,
     active: true, // false로 바뀌면 수강 중지 상태 - 로그인/모든 API 접근이 막힌다
     progressDay: 1, // 실제로 그 날짜치를 완료해야만 다음 차수로 넘어가는 "진도" (달력 날짜와 무관)
-    completed: { shadowing: false, dictation: false, pattern: false, diary: false },
+    completed: { shadowing: false, dictation: false, pattern: false, scramble: false },
     usage: { date: todayKST(), shadowing: 0, dictation: 0 },
     joinDate: todayKST(),
     history: [] // 선생님이 볼 수 있는 학습 활동 기록 (문장, 점수, 작문 내용 등)
@@ -309,7 +316,7 @@ function rollUsageIfNeeded(data) {
     }
     // 못 끝냈으면 progressDay는 그대로 두어, 이어서 같은 차수를 진행하게 한다.
     data.usage = { date: today, shadowing: 0, dictation: 0 };
-    data.completed = { shadowing: false, dictation: false, pattern: false, diary: false };
+    data.completed = { shadowing: false, dictation: false, pattern: false, scramble: false };
     changed = true;
   }
   if (!data.joinDate) {
@@ -326,6 +333,12 @@ function rollUsageIfNeeded(data) {
   }
   if (!data.history) {
     data.history = []; // 기존 계정 호환
+    changed = true;
+  }
+  if (data.completed && Object.prototype.hasOwnProperty.call(data.completed, 'diary') && !Object.prototype.hasOwnProperty.call(data.completed, 'scramble')) {
+    // 영어일기 -> 문장 재구성 게임으로 교체된 기존 계정 호환
+    data.completed.scramble = false;
+    delete data.completed.diary;
     changed = true;
   }
   if (data.name === undefined) {
@@ -551,8 +564,8 @@ app.post('/api/usage/increment', requireAuth, async (req, res) => {
 app.get('/api/content/:type/:level', requireAuth, async (req, res) => {
   const { type } = req.params;
   const level = parseInt(req.params.level, 10);
-  if (!['shadowing', 'dictation', 'pattern'].includes(type)) {
-    return res.status(400).json({ error: 'type은 shadowing, dictation, pattern 중 하나여야 해요.' });
+  if (!['shadowing', 'dictation', 'pattern', 'scramble'].includes(type)) {
+    return res.status(400).json({ error: 'type은 shadowing, dictation, pattern, scramble 중 하나여야 해요.' });
   }
   if (!Number.isInteger(level) || level < 1 || level > 7) {
     return res.status(400).json({ error: 'level은 1~7 사이 숫자여야 해요.' });
