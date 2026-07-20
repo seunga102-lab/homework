@@ -192,6 +192,16 @@
   .feedback-title{ font-weight:700; font-size:13px; margin-bottom:6px; color:var(--teal-dark); }
   .tag{ display:inline-block; background:var(--paper); border:1px solid var(--line); padding:3px 9px; border-radius:14px; font-size:11.5px; margin:3px 4px 0 0; font-weight:600; color:var(--ink-soft); }
 
+  .word-chip{
+    display:inline-block; background:var(--paper-alt); border:1px solid var(--line); border-radius:10px;
+    padding:10px 14px; font-size:15px; font-weight:600; cursor:pointer; user-select:none;
+    transition:transform .1s, background .15s;
+  }
+  .word-chip:active{ transform:scale(.95); }
+  .word-chip.placed{ background:var(--teal); color:#fff; border-color:var(--teal); }
+  .word-chip.correct{ background:var(--success-bg); color:var(--success); border-color:var(--success); }
+  .word-chip.incorrect{ background:var(--error-bg); color:var(--error); border-color:var(--error); }
+
   .loading-dots{ display:flex; gap:5px; justify-content:center; padding:20px 0; }
   .loading-dots span{ width:8px; height:8px; border-radius:50%; background:var(--teal); animation:bounce 1.2s infinite; }
   .loading-dots span:nth-child(2){ animation-delay:.15s; }
@@ -342,13 +352,13 @@
         <div class="chev">›</div>
       </div>
 
-      <div class="mission-card card" onclick="go('diary')">
-        <div class="mission-icon" style="background:#FBF3DD;">📔</div>
+      <div class="mission-card card" onclick="go('scramble')">
+        <div class="mission-icon" style="background:#FBF3DD;">🧩</div>
         <div>
-          <p class="mission-title">영어일기</p>
-          <p class="mission-sub">자유 작문 · AI 첨삭 · 약 8분</p>
+          <p class="mission-title">문장 재구성</p>
+          <p class="mission-sub">단어 순서 맞추기 · 약 5분</p>
         </div>
-        <span class="mission-badge" data-mission-type="diary" style="display:none;">✓ 완료</span>
+        <span class="mission-badge" data-mission-type="scramble" style="display:none;">✓ 완료</span>
         <div class="chev">›</div>
       </div>
 
@@ -507,21 +517,26 @@
     </div>
   </div>
 
-  <!-- ============ DIARY ============ -->
-  <div class="screen" id="screen-diary">
+  <!-- ============ SCRAMBLE (문장 재구성 게임) ============ -->
+  <div class="screen" id="screen-scramble">
     <button class="back-btn" onclick="go('home')">‹ 홈으로</button>
-    <h2 style="margin:0 0 4px;">영어일기</h2>
-    <p style="color:var(--ink-soft); font-size:13.5px; margin:0 0 16px;">오늘 있었던 일을 영어로 자유롭게 적어보세요. (3문장 이상 권장)</p>
+    <h2 style="margin:0 0 4px;">문장 재구성</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <p style="color:var(--ink-soft); font-size:13.5px; margin:0;">섞인 단어를 탭해서 올바른 순서로 문장을 완성하세요.</p>
+      <span class="pill" id="scramble-progress-pill" style="flex-shrink:0; margin-left:8px;">1/3</span>
+    </div>
 
-    <textarea id="diary-input" rows="7" placeholder="Today, I..."></textarea>
-    <div style="text-align:right; font-size:12px; color:var(--ink-soft); margin-top:4px;"><span id="diary-word-count">0</span> words</div>
+    <div class="sentence-box" id="scramble-answer-box" style="min-height:76px; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px;">
+      <span style="color:var(--ink-soft); font-size:13px;" id="scramble-answer-placeholder">아래 단어를 탭해서 순서대로 배열하세요</span>
+    </div>
 
-    <button class="btn btn-primary" style="margin-top:12px;" onclick="submitDiary()">AI 첨삭 받기</button>
+    <div id="scramble-word-bank" style="display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:16px;"></div>
 
-    <div id="diary-loading" class="loading-dots" style="display:none;"><span></span><span></span><span></span></div>
-    <div id="diary-loading-text" class="loading-text" style="display:none;">AI가 문법과 표현을 분석하고 있어요...</div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="resetScrambleRound()">다시 섞기</button>
+    </div>
 
-    <div id="diary-result" style="display:none; margin-top:16px;"></div>
+    <div id="scramble-result" style="display:none; margin-top:16px;"></div>
   </div>
 
   <!-- ============ STUDY (학습 목록) ============ -->
@@ -559,13 +574,13 @@
       <div class="chev">›</div>
     </div>
 
-    <div class="mission-card card" onclick="go('diary')">
-      <div class="mission-icon" style="background:#FBF3DD;">📔</div>
+    <div class="mission-card card" onclick="go('scramble')">
+      <div class="mission-icon" style="background:#FBF3DD;">🧩</div>
       <div>
-        <p class="mission-title">영어일기</p>
-        <p class="mission-sub">자유 작문 · AI 첨삭 · 약 8분</p>
+        <p class="mission-title">문장 재구성</p>
+        <p class="mission-sub">단어 순서 맞추기 · 약 5분</p>
       </div>
-      <span class="mission-badge" data-mission-type="diary" style="display:none;">✓ 완료</span>
+      <span class="mission-badge" data-mission-type="scramble" style="display:none;">✓ 완료</span>
       <div class="chev">›</div>
     </div>
   </div>
@@ -684,7 +699,7 @@
 let authToken = null;
 // 학생용 일반 링크에는 선생님 가입 옵션이 안 보이고, ?teacher=1 이 붙은 특별한 링크에서만 보인다.
 const showTeacherOption = new URLSearchParams(window.location.search).get('teacher') === '1';
-let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, diary:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3, dayCount:1, username:'', role:'student' };
+let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, scramble:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3, dayCount:1, username:'', role:'student' };
 let authMode = 'login';
 
 function switchAuthTab(mode){
@@ -808,6 +823,7 @@ async function enterHome(){
   await initShadowSentence();
   await prepareDictSentence();
   await initPattern();
+  await initScramble();
   updateUsagePills();
 }
 
@@ -983,25 +999,32 @@ const FALLBACK_LOCAL = {
     {en:"I like...",ko:"나는 좋아해..."},
     {en:"I like pizza.",ko:"나는 피자를 좋아해."},
     {en:"I like pizza and pasta.",ko:"나는 피자랑 파스타를 좋아해."}
+  ],
+  scramble: [
+    {en:"I usually go to work by bus.",ko:"나는 보통 버스로 출근한다."},
+    {en:"She likes to read books at night.",ko:"그녀는 밤에 책 읽는 것을 좋아한다."},
+    {en:"We are planning a trip next month.",ko:"우리는 다음 달에 여행을 계획하고 있다."}
   ]
 };
 
 async function ensureTodayContent(){
   if(todayContent.level === state.level && todayContent.day === state.dayCount &&
-     todayContent.shadowing && todayContent.dictation && todayContent.pattern){
+     todayContent.shadowing && todayContent.dictation && todayContent.pattern && todayContent.scramble){
     return; // 이미 이 레벨/날짜에 대해 로드됨
   }
-  todayContent = { shadowing:null, dictation:null, pattern:null, level:state.level, day:state.dayCount };
+  todayContent = { shadowing:null, dictation:null, pattern:null, scramble:null, level:state.level, day:state.dayCount };
   try{
-    const [sRes, dRes, pRes] = await Promise.all([
+    const [sRes, dRes, pRes, scRes] = await Promise.all([
       authFetch(`/api/content/shadowing/${state.level}`),
       authFetch(`/api/content/dictation/${state.level}`),
-      authFetch(`/api/content/pattern/${state.level}`)
+      authFetch(`/api/content/pattern/${state.level}`),
+      authFetch(`/api/content/scramble/${state.level}`)
     ]);
-    const [sData, dData, pData] = await Promise.all([sRes.json(), dRes.json(), pRes.json()]);
+    const [sData, dData, pData, scData] = await Promise.all([sRes.json(), dRes.json(), pRes.json(), scRes.json()]);
     todayContent.shadowing = sData.content;
     todayContent.dictation = dData.content;
     todayContent.pattern = pData.content;
+    todayContent.scramble = scData.content;
   }catch(e){
     console.error('오늘의 콘텐츠 로딩 오류:', e);
     showToast('오늘의 학습 문장을 불러오는 중 오류가 발생했어요');
@@ -1041,7 +1064,7 @@ function go(screen){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+screen).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  const navMap = {home:'home', study:'study', shadowing:'study', dictation:'study', pattern:'study', diary:'study', report:'report', mypage:'me'};
+  const navMap = {home:'home', study:'study', shadowing:'study', dictation:'study', pattern:'study', scramble:'study', report:'report', mypage:'me'};
   const navEl = document.querySelector('[data-nav="'+(navMap[screen]||'home')+'"]');
   if(navEl) navEl.classList.add('active');
   document.querySelector('.bottom-nav').style.display = (screen==='login' || screen==='level-select' || screen==='teacher-dashboard' || screen==='student-detail') ? 'none' : 'flex';
@@ -1071,10 +1094,10 @@ function renderReport(){
   document.getElementById('report-usage-shadow').textContent = (state.usage.shadowing||0) + '/' + state.dailyLimit;
   document.getElementById('report-usage-dict').textContent = (state.usage.dictation||0) + '/' + state.dailyLimit;
 
-  const missionLabels = { shadowing:'🗣️ 쉐도잉', dictation:'✍️ 딕테이션', pattern:'💬 원어민 패턴 학습', diary:'📔 영어일기' };
+  const missionLabels = { shadowing:'🗣️ 쉐도잉', dictation:'✍️ 딕테이션', pattern:'💬 원어민 패턴 학습', scramble:'🧩 문장 재구성' };
   const listHtml = Object.keys(missionLabels).map(type=>{
     const done = state.completed[type];
-    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; ${type!=='diary' ? 'border-bottom:1px solid var(--line);' : ''}">
+    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; ${type!=='scramble' ? 'border-bottom:1px solid var(--line);' : ''}">
       <span style="font-size:13.5px;">${missionLabels[type]}</span>
       <span style="font-weight:700; font-size:13px; color:${done ? 'var(--success)' : 'var(--ink-soft)'};">${done ? '✓ 완료' : '미완료'}</span>
     </div>`;
@@ -1115,7 +1138,7 @@ function renderTeacherStudentList(students){
     document.getElementById('teacher-student-list').innerHTML = '<div class="card" style="text-align:center; color:var(--ink-soft); font-size:13.5px;">아직 가입한 학생이 없어요.</div>';
     return;
   }
-  const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', diary:'📔' };
+  const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', scramble:'🧩' };
   const html = students.map(s=>{
     const doneCount = Object.values(s.completed).filter(Boolean).length;
     const statusDot = !s.active ? '⛔' : doneCount >= 3 ? '🟢' : doneCount >= 1 ? '🟡' : '🔴';
@@ -1205,7 +1228,7 @@ async function deleteStudent(){
 }
 
 function renderStudentDetail(s, history){
-  const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', diary:'📔' };
+  const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', scramble:'🧩' };
   const doneCount = Object.values(s.completed).filter(Boolean).length;
   document.getElementById('student-detail-name').textContent = s.name ? `${s.name} (${s.username})` : `${s.username} 학생`;
   document.getElementById('student-detail-summary').innerHTML = `
@@ -1227,7 +1250,7 @@ function renderStudentDetail(s, history){
 
   const html = history.map(h=>{
     const icon = missionIcons[h.type] || '📝';
-    const typeLabel = { shadowing:'쉐도잉', dictation:'딕테이션', pattern:'패턴학습', diary:'영어일기' }[h.type] || h.type;
+    const typeLabel = { shadowing:'쉐도잉', dictation:'딕테이션', pattern:'패턴학습', scramble:'문장 재구성' }[h.type] || h.type;
     const scoreHtml = (h.score !== null && h.score !== undefined) ? `<span class="tag" style="margin-left:6px;">${h.score}점</span>` : '';
     return `
     <div class="card">
@@ -1951,6 +1974,7 @@ async function selectLevel(n){
   await initShadowSentence();
   await prepareDictSentence();
   await initPattern();
+  await initScramble();
   showToast(currentLevelData().name + ' 콘텐츠로 전환했어요');
 }
 
@@ -2554,61 +2578,129 @@ async function submitPatternSentence(){
   document.getElementById('pattern-loading').style.display='none';
 }
 
-/* ================= DIARY ================= */
-document.addEventListener('input', (e)=>{
-  if(e.target && e.target.id === 'diary-input'){
-    const words = e.target.value.trim().split(/\s+/).filter(Boolean).length;
-    document.getElementById('diary-word-count').textContent = words;
-  }
-});
-async function submitDiary(){
-  const text = document.getElementById('diary-input').value.trim();
-  if(text.split(/\s+/).filter(Boolean).length < 5){ showToast('조금 더 길게 작성해보세요 (5단어 이상)'); return; }
+/* ================= SCRAMBLE (문장 재구성 게임) ================= */
+let scrambleIndex = 0; // 오늘의 3문장 중 몇 번째인지 (0,1,2)
+let scrambleTargetWords = []; // 정답 순서의 단어 배열
+let scrambleAnswerWords = []; // 학생이 지금까지 배치한 단어 배열
+let scrambleBankState = []; // word bank에 남아있는 {word, used} 상태 배열 (같은 단어가 여러 번 나올 수 있어 인덱스로 관리)
+let scrambleSolved = false;
 
-  document.getElementById('diary-loading').style.display='flex';
-  document.getElementById('diary-loading-text').style.display='block';
-  document.getElementById('diary-result').style.display='none';
-
-  const sys = `너는 영어일기 첨삭 AI다. 학생의 레벨은 ${currentLevelData().name}(${currentLevelData().cefr})이다. 학생의 영어일기를 분석한다. 칭찬을 먼저 하고, 개선점은 최대 3개까지만 제시하며 학생 레벨에 맞는 눈높이로 설명한다.
-반드시 순수 JSON만 응답:
-{"praise":"칭찬 한글 1문장","grammar_fixes":[{"wrong":"","correct":"","reason":""}],"natural_expressions":[{"original":"","better":""}],"recommended_words":["word1","word2","word3"],"weakness_tags":["태그1","태그2"]}`;
-
-  try{
-    const raw = await callClaude(sys, `학생 일기: """${text}"""`);
-    const r = safeJsonParse(raw);
-    renderDiaryResult(r, text);
-  }catch(e){
-    console.error('Diary AI error:', e);
-    document.getElementById('diary-result').innerHTML = '<div class="banner">AI 첨삭 중 오류가 발생했어요: ' + e.message + '<br><button class="btn btn-secondary" style="margin-top:10px;" onclick="submitDiary()">다시 시도</button></div>';
-    document.getElementById('diary-result').style.display='block';
-  }
-  document.getElementById('diary-loading').style.display='none';
-  document.getElementById('diary-loading-text').style.display='none';
+function currentScrambleSentence(){
+  const list = todayContent.scramble || FALLBACK_LOCAL.scramble;
+  return list[scrambleIndex % list.length];
 }
-function renderDiaryResult(r, text){
-  const fixesHtml = (r.grammar_fixes||[]).map(f=>
-    `<div style="margin-bottom:8px; font-size:14px;"><span class="diff-del">${f.wrong}</span> → <span class="diff-add">${f.correct}</span><div style="font-size:12.5px; color:var(--ink-soft); margin-top:2px;">${f.reason}</div></div>`
-  ).join('') || '<span style="font-size:13.5px; color:var(--ink-soft);">눈에 띄는 문법 오류가 없어요!</span>';
 
-  const naturalHtml = (r.natural_expressions||[]).map(n=>
-    `<div style="margin-bottom:6px; font-size:14px;">"${n.original}" → <strong>"${n.better}"</strong></div>`
-  ).join('') || '<span style="font-size:13.5px; color:var(--ink-soft);">이미 자연스러운 표현이에요!</span>';
+async function initScramble(){
+  document.getElementById('scramble-progress-pill').textContent = '로딩...';
+  await ensureTodayContent();
+  scrambleIndex = 0;
+  setupScrambleRound();
+}
 
-  const wordsHtml = (r.recommended_words||[]).map(w=>`<span class="tag">${w}</span>`).join('');
-  const tagsHtml = (r.weakness_tags||[]).map(t=>`<span class="tag" style="color:var(--coral-dark);">${t}</span>`).join('');
+function setupScrambleRound(){
+  const sentence = currentScrambleSentence();
+  // 문장 끝 마침표/물음표는 별도로 떼어서 마지막 단어에 붙여둔다 (단어 배열은 순수 단어 기준으로 섞는다)
+  scrambleTargetWords = sentence.en.trim().split(/\s+/);
+  scrambleAnswerWords = [];
+  scrambleSolved = false;
 
-  logHistory('diary', (text||'').slice(0,200), r.praise || '', null);
+  // 단어를 랜덤하게 섞는다 (원래 순서와 100% 같으면 다시 섞음)
+  let shuffled;
+  do{
+    shuffled = scrambleTargetWords.map((w,i)=>({w,i})).sort(()=>Math.random()-0.5);
+  }while(shuffled.length > 1 && shuffled.every((item,idx)=>item.i===idx));
+  scrambleBankState = shuffled.map(item=>({ word:item.w, placed:false }));
 
-  document.getElementById('diary-result').innerHTML = `
-    <div class="card">
-      <div style="font-size:14px; color:var(--teal-dark); font-weight:600;">${r.praise}</div>
-      <div class="feedback-block"><div class="feedback-title">문법 첨삭</div>${fixesHtml}</div>
-      <div class="feedback-block"><div class="feedback-title">더 자연스러운 표현</div>${naturalHtml}</div>
-      <div class="feedback-block"><div class="feedback-title">추천 단어</div>${wordsHtml}</div>
-      <div class="feedback-block" style="border-left-color:var(--coral);"><div class="feedback-title" style="color:var(--coral-dark);">다음 학습에 반영될 약점 태그</div>${tagsHtml}</div>
-      <button class="btn btn-primary" style="margin-top:14px;" onclick="completeMission('diary')">완료하고 홈으로</button>
-    </div>`;
-  document.getElementById('diary-result').style.display='block';
+  document.getElementById('scramble-progress-pill').textContent = (scrambleIndex+1) + '/3';
+  document.getElementById('scramble-result').style.display = 'none';
+  document.getElementById('scramble-result').innerHTML = '';
+  renderScrambleUI();
+}
+
+function renderScrambleUI(){
+  const answerBox = document.getElementById('scramble-answer-box');
+  const bank = document.getElementById('scramble-word-bank');
+
+  if(scrambleAnswerWords.length === 0){
+    answerBox.innerHTML = '<span style="color:var(--ink-soft); font-size:13px;" id="scramble-answer-placeholder">아래 단어를 탭해서 순서대로 배열하세요</span>';
+  } else {
+    answerBox.innerHTML = scrambleAnswerWords.map((entry, idx)=>
+      `<span class="word-chip placed" onclick="removeScrambleWord(${idx})">${escapeHtml(entry.word)}</span>`
+    ).join('');
+  }
+
+  bank.innerHTML = scrambleBankState.map((entry, idx)=>
+    entry.placed ? '' : `<span class="word-chip" onclick="placeScrambleWord(${idx})">${escapeHtml(entry.word)}</span>`
+  ).join('');
+}
+
+function placeScrambleWord(bankIdx){
+  if(scrambleSolved) return;
+  const entry = scrambleBankState[bankIdx];
+  if(!entry || entry.placed) return;
+  entry.placed = true;
+  scrambleAnswerWords.push({ word:entry.word, bankIdx });
+  renderScrambleUI();
+  if(scrambleBankState.every(e=>e.placed)){
+    checkScrambleAnswer();
+  }
+}
+function removeScrambleWord(answerIdx){
+  if(scrambleSolved) return;
+  const entry = scrambleAnswerWords[answerIdx];
+  if(!entry) return;
+  scrambleBankState[entry.bankIdx].placed = false;
+  scrambleAnswerWords.splice(answerIdx, 1);
+  renderScrambleUI();
+}
+function resetScrambleRound(){
+  setupScrambleRound();
+}
+
+function normalizeForCompare(str){
+  return str.toLowerCase().replace(/[.,!?]/g,'').trim();
+}
+async function checkScrambleAnswer(){
+  const built = scrambleAnswerWords.map(e=>e.word).join(' ');
+  const target = scrambleTargetWords.join(' ');
+  const isCorrect = normalizeForCompare(built) === normalizeForCompare(target);
+  scrambleSolved = true;
+
+  const sentence = currentScrambleSentence();
+  const answerChips = document.querySelectorAll('#scramble-answer-box .word-chip');
+  answerChips.forEach(chip => chip.classList.add(isCorrect ? 'correct' : 'incorrect'));
+
+  if(isCorrect){
+    logHistory('scramble', sentence.en, '한 번에 정답', null);
+    document.getElementById('scramble-result').innerHTML = `
+      <div class="card">
+        <div class="feedback-block" style="border-left-color:var(--success);">
+          <div class="feedback-title" style="color:var(--success);">🎉 정답이에요!</div>
+          <div style="font-size:15px; font-weight:600; margin-top:4px;">${escapeHtml(sentence.en)}</div>
+          <div style="font-size:13px; color:var(--ink-soft); margin-top:4px;">${escapeHtml(sentence.ko)}</div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:10px;" onclick="nextScrambleRound()">${scrambleIndex < 2 ? '다음 문장으로 →' : '완료하고 홈으로'}</button>
+      </div>`;
+  } else {
+    document.getElementById('scramble-result').innerHTML = `
+      <div class="card">
+        <div class="feedback-block" style="border-left-color:var(--error);">
+          <div class="feedback-title" style="color:var(--error);">아쉬워요, 순서가 달라요</div>
+          <div style="font-size:13.5px; color:var(--ink-soft); margin-top:4px;">다시 섞기 버튼을 눌러 한 번 더 도전해보세요.</div>
+        </div>
+        <button class="btn btn-secondary" style="margin-top:10px;" onclick="resetScrambleRound()">다시 도전하기</button>
+      </div>`;
+  }
+  document.getElementById('scramble-result').style.display = 'block';
+}
+
+async function nextScrambleRound(){
+  if(scrambleIndex < 2){
+    scrambleIndex++;
+    setupScrambleRound();
+  } else {
+    await completeMission('scramble');
+  }
 }
 
 /* ================= INIT ================= */
