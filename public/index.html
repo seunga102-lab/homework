@@ -2017,48 +2017,17 @@ function speakText(text, rate, isRetry){
     showToast('이 브라우저는 음성 재생을 지원하지 않아요. Chrome 브라우저를 사용해주세요.');
     return;
   }
+  // 진단을 위해 최대한 단순하게: 취소 -> 새 발화 생성 -> 바로 재생. 음성 지정/재시도/보정 로직 전부 제거.
   speechSynthesis.cancel();
-
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = 'en-US';
   utter.rate = rate;
-
-  // 영어 음성 중 더 자연스러운 걸 우선 선택 (일부 안드로이드 기기는 지정 안 하면 무음으로 실패하기도 함)
-  const voices = speechSynthesis.getVoices();
-  const enVoice = pickBestEnglishVoice(voices);
-  if(enVoice) utter.voice = enVoice;
-
-  let started = false;
-  utter.onstart = ()=>{ started = true; };
   utter.onerror = (e)=>{
-    console.error('TTS error:', e);
-    if(!isRetry){
-      // 첫 시도 실패 시 한 번 더 시도 (안드로이드 일부 브라우저는 음성 목록이 늦게 로드되어 첫 호출만 실패하는 경우가 있음)
-      setTimeout(()=> speakText(text, rate, true), 200);
-    } else {
-      showToast('음성 재생에 실패했어요. 기기의 "설정 > 접근성 > TTS(글자 읽어주기)"에서 영어 음성이 설치되어 있는지 확인해주세요 🔊');
-    }
+    console.error('TTS error:', e, JSON.stringify(e));
+    showToast('음성 재생 오류: ' + (e.error || '알 수 없음'));
   };
-
   currentUtterance = utter;
   speechSynthesis.speak(utter);
-
-  // 크로미움 계열 안드로이드 브라우저(삼성인터넷 포함)에서 speak() 호출 직후 즉시 pause/resume을 해주면
-  // 무음으로 실패하던 것이 정상적으로 재생되는 경우가 있어 방어적으로 적용한다.
-  setTimeout(()=>{
-    try{ speechSynthesis.pause(); speechSynthesis.resume(); }catch(e){ /* 무시 */ }
-  }, 50);
-
-  // 에러 이벤트조차 없이 그냥 무음일 수 있어, 일정 시간 내 시작 안 하면 재시도 또는 안내
-  setTimeout(()=>{
-    if(!started){
-      if(!isRetry){
-        speakText(text, rate, true);
-      } else {
-        showToast('소리가 안 들리면 기기의 "설정 > 접근성 > TTS(글자 읽어주기)"에서 영어 음성팩이 설치되어 있는지 확인해주세요 🔊');
-      }
-    }
-  }, 1000);
 }
 
 function playShadowSentence(){
