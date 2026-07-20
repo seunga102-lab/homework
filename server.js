@@ -73,12 +73,12 @@ function daysSince(dateStr) {
 
 /* ================= AI 기반 일일 콘텐츠 생성 (레벨당/타입당 하루에 한 번만 생성, 그 날 접속하는 모든 학생이 공유) ================= */
 const LEVEL_META = {
-  1: { name: 'Lv.1 입문', cefr: 'A1' },
-  2: { name: 'Lv.2 초급', cefr: 'A2' },
-  3: { name: 'Lv.3 초중급', cefr: 'A2-B1' },
-  4: { name: 'Lv.4 중급', cefr: 'B1' },
-  5: { name: 'Lv.5 중고급', cefr: 'B1-B2' },
-  6: { name: 'Lv.6 고급', cefr: 'B2-C1' }
+  1: { name: 'Lv.1 입문', cefr: 'A1', goal: '단어 → 아주 짧은 문장', length: '3~5단어', grammar: 'Be동사, 일반동사 현재형만 사용', example: 'I am happy. / She likes coffee.' },
+  2: { name: 'Lv.2 초급', cefr: 'A2', goal: '일상 한 문장 말하기', length: '5~8단어', grammar: '현재, 과거, 미래 시제와 의문문', example: 'I usually go to work by bus.' },
+  3: { name: 'Lv.3 초중급', cefr: 'A2-B1', goal: '이유를 덧붙여 말하기', length: '8~12단어', grammar: 'because, when, if, can, want to 를 활용한 문장', example: 'I stayed home because it was raining.' },
+  4: { name: 'Lv.4 중급', cefr: 'B1', goal: '자연스럽게 대화하기', length: '10~15단어', grammar: '현재완료, 비교급, 관계대명사, 동명사', example: "I've never been to Japan, but I'd like to visit someday." },
+  5: { name: 'Lv.5 중고급', cefr: 'B1-B2', goal: '의견과 경험 설명하기', length: '15~20단어', grammar: '가정법, 수동태, 분사구문 일부', example: 'If I had more time, I would learn another language.' },
+  6: { name: 'Lv.6 고급', cefr: 'B2-C1', goal: '원어민처럼 길게 말하기', length: '20단어 이상', grammar: '다양한 문장 연결어, 관용 표현, 자연스러운 어순', example: 'Although it was difficult at first, I eventually became comfortable speaking English.' }
 };
 
 // 최소한의 비상용 대체 콘텐츠 (AI 호출 자체가 실패했을 때만 사용됨)
@@ -151,29 +151,47 @@ async function generateDailyContent(type, level) {
     const purpose = type === 'shadowing'
       ? '쉐도잉(듣고 따라 말하기) 연습용 문장'
       : '딕테이션(듣고 받아쓰기) 연습용 문장';
-    const sys = `너는 영어 학습 콘텐츠 제작자다. ${meta.name}(${meta.cefr}) 수준 학생을 위한 ${purpose} 3개를 새로 만든다.
+    const sys = `너는 영어 학습 콘텐츠 제작자다. 아래 레벨 기준에 정확히 맞는 ${purpose} 3개를 새로 만든다.
+
+레벨: ${meta.name} (${meta.cefr})
+학습 목표: ${meta.goal}
+문장 길이: 반드시 ${meta.length} 범위 안에서만 작성 (이 범위를 벗어나면 안 됨)
+사용 가능한 문법: ${meta.grammar}
+난이도 참고 예문: "${meta.example}"
+
+규칙:
+- 위 문장 길이 범위와 문법 수준을 절대 벗어나지 말 것 (더 쉽거나 더 어렵게 만들지 말 것)
 - 실제 원어민이 일상 대화에서 자연스럽게 쓰는 표현으로 만들 것 (교과서적이지 않게)
-- 3개는 서로 다른 주제/문법 포인트를 다룰 것
+- 3개는 서로 다른 주제를 다룰 것
 - 저작권 있는 특정 영화/드라마/노래 대사를 그대로 베끼지 말 것 (원본 문장을 새로 창작)
 - 반드시 순수 JSON 배열만 응답하고 다른 설명은 절대 포함하지 마라.
 형식: [{"en":"영어 문장","ko":"한글 뜻"},{"en":"...","ko":"..."},{"en":"...","ko":"..."}]`;
-    const raw = await callAnthropicRaw(sys, `${meta.name} 수준에 맞는 새로운 문장 3개를 만들어줘.`);
+    const raw = await callAnthropicRaw(sys, `${meta.name} 수준(${meta.length}, ${meta.grammar})에 정확히 맞는 새로운 문장 3개를 만들어줘.`);
     const parsed = safeJsonParseServer(raw);
     if (!Array.isArray(parsed) || parsed.length < 3) throw new Error('AI 응답 형식이 올바르지 않습니다.');
     return parsed.slice(0, 3).map((p) => ({ en: String(p.en || '').trim(), ko: String(p.ko || '').trim() }));
   }
 
   if (type === 'pattern') {
-    const sys = `너는 영어 학습 콘텐츠 제작자다. ${meta.name}(${meta.cefr}) 수준 학생을 위한 "패턴 학습" 세트 1개를 새로 만든다.
-패턴 학습은 짧은 시작 표현이 점점 길어지는 3단계 문장 세트다. 예시 스타일:
+    const sys = `너는 영어 학습 콘텐츠 제작자다. 아래 레벨 기준에 정확히 맞는 "패턴 학습" 세트 1개를 새로 만든다.
+패턴 학습은 짧은 시작 표현이 점점 길어지는 3단계 문장 세트다. 예시 스타일(형식 참고용, 난이도는 아래 기준을 따를 것):
 STEP1: "I'm the one who..." (짧은 시작 표현, 미완성)
 STEP2: "I'm the one who called you." (완성된 짧은 문장)
 STEP3: "I'm the one who called you yesterday." (더 길고 구체적인 문장)
-- ${meta.cefr} 수준에 맞는 난이도의 실용적인 회화 패턴으로 만들 것
+
+레벨: ${meta.name} (${meta.cefr})
+학습 목표: ${meta.goal}
+최종(STEP3) 문장 길이: 반드시 ${meta.length} 범위 안에서 작성
+사용 가능한 문법: ${meta.grammar}
+난이도 참고 예문: "${meta.example}"
+
+규칙:
+- STEP3의 최종 문장이 위 문장 길이 범위와 문법 수준을 벗어나지 말 것
+- ${meta.cefr} 수준에 맞는 실용적인 회화 패턴으로 만들 것
 - 저작권 있는 대사를 베끼지 말고 새로 창작할 것
 - 반드시 순수 JSON 배열 3개 항목만 응답하고 다른 설명은 절대 포함하지 마라.
 형식: [{"en":"STEP1 영어","ko":"STEP1 한글 뜻"},{"en":"STEP2 영어","ko":"STEP2 한글 뜻"},{"en":"STEP3 영어","ko":"STEP3 한글 뜻"}]`;
-    const raw = await callAnthropicRaw(sys, `${meta.name} 수준에 맞는 새로운 패턴 세트를 만들어줘.`);
+    const raw = await callAnthropicRaw(sys, `${meta.name} 수준(${meta.length}, ${meta.grammar})에 정확히 맞는 새로운 패턴 세트를 만들어줘.`);
     const parsed = safeJsonParseServer(raw);
     if (!Array.isArray(parsed) || parsed.length < 3) throw new Error('AI 응답 형식이 올바르지 않습니다.');
     return parsed.slice(0, 3).map((p) => ({ en: String(p.en || '').trim(), ko: String(p.ko || '').trim() }));
