@@ -526,6 +526,10 @@
       <span class="pill" id="scramble-progress-pill" style="flex-shrink:0; margin-left:8px;">1/3</span>
     </div>
 
+    <div class="banner" id="scramble-hint" style="background:#EFEBFB; border-color:#DCD3F0; color:var(--ink);">
+      💡 힌트(한글 뜻): <span id="scramble-hint-text"></span>
+    </div>
+
     <div class="sentence-box" id="scramble-answer-box" style="min-height:76px; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px;">
       <span style="color:var(--ink-soft); font-size:13px;" id="scramble-answer-placeholder">아래 단어를 탭해서 순서대로 배열하세요</span>
     </div>
@@ -2612,6 +2616,7 @@ function setupScrambleRound(){
   scrambleBankState = shuffled.map(item=>({ word:item.w, placed:false }));
 
   document.getElementById('scramble-progress-pill').textContent = (scrambleIndex+1) + '/3';
+  document.getElementById('scramble-hint-text').textContent = sentence.ko;
   document.getElementById('scramble-result').style.display = 'none';
   document.getElementById('scramble-result').innerHTML = '';
   renderScrambleUI();
