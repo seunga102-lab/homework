@@ -2588,6 +2588,7 @@ let scrambleTargetWords = []; // 정답 순서의 단어 배열
 let scrambleAnswerWords = []; // 학생이 지금까지 배치한 단어 배열
 let scrambleBankState = []; // word bank에 남아있는 {word, used} 상태 배열 (같은 단어가 여러 번 나올 수 있어 인덱스로 관리)
 let scrambleSolved = false;
+let scrambleFailCount = 0; // 이 문장에서 틀린 횟수 (3번 틀리면 자동으로 다음 문장으로 넘어감)
 
 function currentScrambleSentence(){
   const list = todayContent.scramble || FALLBACK_LOCAL.scramble;
@@ -2602,6 +2603,12 @@ async function initScramble(){
 }
 
 function setupScrambleRound(){
+  scrambleFailCount = 0; // 새로운 문장을 시작할 때만 실패 횟수 초기화
+  reshuffleScrambleWords();
+}
+
+// 같은 문장을 다시 섞어서 재도전할 때 사용 (실패 횟수는 유지한다)
+function reshuffleScrambleWords(){
   const sentence = currentScrambleSentence();
   // 문장 끝 마침표/물음표는 별도로 떼어서 마지막 단어에 붙여둔다 (단어 배열은 순수 단어 기준으로 섞는다)
   scrambleTargetWords = sentence.en.trim().split(/\s+/);
@@ -2659,7 +2666,7 @@ function removeScrambleWord(answerIdx){
   renderScrambleUI();
 }
 function resetScrambleRound(){
-  setupScrambleRound();
+  reshuffleScrambleWords();
 }
 
 function normalizeForCompare(str){
@@ -2687,14 +2694,30 @@ async function checkScrambleAnswer(){
         <button class="btn btn-primary" style="margin-top:10px;" onclick="nextScrambleRound()">${scrambleIndex < 2 ? '다음 문장으로 →' : '완료하고 홈으로'}</button>
       </div>`;
   } else {
-    document.getElementById('scramble-result').innerHTML = `
-      <div class="card">
-        <div class="feedback-block" style="border-left-color:var(--error);">
-          <div class="feedback-title" style="color:var(--error);">아쉬워요, 순서가 달라요</div>
-          <div style="font-size:13.5px; color:var(--ink-soft); margin-top:4px;">다시 섞기 버튼을 눌러 한 번 더 도전해보세요.</div>
-        </div>
-        <button class="btn btn-secondary" style="margin-top:10px;" onclick="resetScrambleRound()">다시 도전하기</button>
-      </div>`;
+    scrambleFailCount += 1;
+    if(scrambleFailCount >= 3){
+      // 3번 틀리면 정답을 보여주고 자동으로 다음 문장으로 넘어갈 수 있게 한다 (같은 문장에 막히지 않도록)
+      logHistory('scramble', sentence.en, `3번 시도 후 실패`, null);
+      document.getElementById('scramble-result').innerHTML = `
+        <div class="card">
+          <div class="feedback-block" style="border-left-color:var(--warning);">
+            <div class="feedback-title" style="color:var(--warning);">괜찮아요, 3번 도전했어요!</div>
+            <div style="font-size:13.5px; color:var(--ink-soft); margin-top:4px;">정답을 보여드릴게요.</div>
+            <div style="font-size:15px; font-weight:600; margin-top:8px;">${escapeHtml(sentence.en)}</div>
+            <div style="font-size:13px; color:var(--ink-soft); margin-top:4px;">${escapeHtml(sentence.ko)}</div>
+          </div>
+          <button class="btn btn-primary" style="margin-top:10px;" onclick="nextScrambleRound()">${scrambleIndex < 2 ? '다음 문장으로 →' : '완료하고 홈으로'}</button>
+        </div>`;
+    } else {
+      document.getElementById('scramble-result').innerHTML = `
+        <div class="card">
+          <div class="feedback-block" style="border-left-color:var(--error);">
+            <div class="feedback-title" style="color:var(--error);">아쉬워요, 순서가 달라요 (${scrambleFailCount}/3)</div>
+            <div style="font-size:13.5px; color:var(--ink-soft); margin-top:4px;">다시 섞기 버튼을 눌러 한 번 더 도전해보세요.</div>
+          </div>
+          <button class="btn btn-secondary" style="margin-top:10px;" onclick="resetScrambleRound()">다시 도전하기</button>
+        </div>`;
+    }
   }
   document.getElementById('scramble-result').style.display = 'block';
 }
