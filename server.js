@@ -103,6 +103,14 @@ const FALLBACK_CONTENT = {
     { en: 'I usually go to work by bus.', ko: '나는 보통 버스로 출근한다.' },
     { en: 'She likes to read books at night.', ko: '그녀는 밤에 책 읽는 것을 좋아한다.' },
     { en: 'We are planning a trip next month.', ko: '우리는 다음 달에 여행을 계획하고 있다.' }
+  ],
+  vocab: [
+    { word: 'happy', meaning: '행복한', example_en: 'I am happy today.', example_ko: '나는 오늘 행복하다.' },
+    { word: 'busy', meaning: '바쁜', example_en: 'She is busy this week.', example_ko: '그녀는 이번 주에 바쁘다.' },
+    { word: 'decide', meaning: '결정하다', example_en: "I haven't decided yet.", example_ko: '나는 아직 결정하지 않았어.' },
+    { word: 'improve', meaning: '개선하다, 나아지다', example_en: 'I want to improve my English.', example_ko: '나는 내 영어를 개선하고 싶어.' },
+    { word: 'usually', meaning: '보통, 대개', example_en: 'I usually wake up at seven.', example_ko: '나는 보통 7시에 일어난다.' },
+    { word: 'closer look', meaning: '더 자세히 살펴봄', example_en: 'This warrants a closer look.', example_ko: '이건 더 자세히 살펴볼 필요가 있어.' }
   ]
 };
 
@@ -222,6 +230,37 @@ ${slangPatternRules}
     return parsed.slice(0, 3).map((p) => ({ en: String(p.en || '').trim(), ko: String(p.ko || '').trim() }));
   }
 
+  if (type === 'vocab') {
+    const isSlangLevel = level === 7;
+    const slangVocabRules = isSlangLevel
+      ? `\n특별 규칙 (이 레벨 전용): 각 단어는 실제 미국 MZ세대(Gen Z)가 쓰는 슬랭/줄임말 표현이어야 한다 (예: no cap, bet, lowkey, bussin, slay, rizz, iykyk, fr fr, sus, hits different, ghosted, simp 등 — 매번 새로운 것 위주로). 욕설, 비속어, 성적이거나 공격적인 표현은 절대 포함하지 말 것.`
+      : '';
+    const sys = `너는 영어 학습 콘텐츠 제작자다. 아래 레벨 기준에 정확히 맞는 "오늘의 단어" 6개를 새로 만든다.
+
+레벨: ${meta.name} (${meta.cefr})
+학습 목표: ${meta.goal}
+난이도 참고 예문: "${meta.example}"
+${meta.vocab ? "사용 어휘 제한: " + meta.vocab : ""}
+${slangVocabRules}
+
+규칙:
+- 이 레벨 수준의 학생이 배우기 적절한 단어/표현 6개를 선정할 것 (${meta.cefr} 수준)
+- 6개는 서로 다른 주제/품사를 다뤄서 다양하게 만들 것
+- 각 단어마다 그 단어가 자연스럽게 쓰인 예문을 만들 것 (예문 길이는 ${meta.length} 범위를 크게 벗어나지 않게)
+- 저작권 있는 대사를 베끼지 말고 새로 창작할 것
+- 반드시 순수 JSON 배열 6개 항목만 응답하고 다른 설명은 절대 포함하지 마라.
+형식: [{"word":"영어 단어/표현","meaning":"한글 뜻","example_en":"예문 영어","example_ko":"예문 한글 뜻"}, ...]`;
+    const raw = await callAnthropicRaw(sys, `${meta.name} 수준(${meta.cefr})에 정확히 맞는 새로운 단어 6개를 만들어줘.`);
+    const parsed = safeJsonParseServer(raw);
+    if (!Array.isArray(parsed) || parsed.length < 4) throw new Error('AI 응답 형식이 올바르지 않습니다.');
+    return parsed.slice(0, 6).map((p) => ({
+      word: String(p.word || '').trim(),
+      meaning: String(p.meaning || '').trim(),
+      example_en: String(p.example_en || '').trim(),
+      example_ko: String(p.example_ko || '').trim()
+    }));
+  }
+
   throw new Error('알 수 없는 type: ' + type);
 }
 
@@ -295,7 +334,7 @@ function defaultUserData(name) {
     streak: 0,
     active: true, // false로 바뀌면 수강 중지 상태 - 로그인/모든 API 접근이 막힌다
     progressDay: 1, // 실제로 그 날짜치를 완료해야만 다음 차수로 넘어가는 "진도" (달력 날짜와 무관)
-    completed: { shadowing: false, dictation: false, pattern: false, scramble: false },
+    completed: { shadowing: false, dictation: false, pattern: false, scramble: false, vocab: false },
     usage: { date: todayKST(), shadowing: 0, dictation: 0 },
     joinDate: todayKST(),
     history: [] // 선생님이 볼 수 있는 학습 활동 기록 (문장, 점수, 작문 내용 등)
@@ -316,7 +355,7 @@ function rollUsageIfNeeded(data) {
     }
     // 못 끝냈으면 progressDay는 그대로 두어, 이어서 같은 차수를 진행하게 한다.
     data.usage = { date: today, shadowing: 0, dictation: 0 };
-    data.completed = { shadowing: false, dictation: false, pattern: false, scramble: false };
+    data.completed = { shadowing: false, dictation: false, pattern: false, scramble: false, vocab: false };
     changed = true;
   }
   if (!data.joinDate) {
@@ -339,6 +378,11 @@ function rollUsageIfNeeded(data) {
     // 영어일기 -> 문장 재구성 게임으로 교체된 기존 계정 호환
     data.completed.scramble = false;
     delete data.completed.diary;
+    changed = true;
+  }
+  if (data.completed && !Object.prototype.hasOwnProperty.call(data.completed, 'vocab')) {
+    // "오늘의 단어" 미션 추가 이전 가입자 호환
+    data.completed.vocab = false;
     changed = true;
   }
   if (data.name === undefined) {
@@ -564,8 +608,8 @@ app.post('/api/usage/increment', requireAuth, async (req, res) => {
 app.get('/api/content/:type/:level', requireAuth, async (req, res) => {
   const { type } = req.params;
   const level = parseInt(req.params.level, 10);
-  if (!['shadowing', 'dictation', 'pattern', 'scramble'].includes(type)) {
-    return res.status(400).json({ error: 'type은 shadowing, dictation, pattern, scramble 중 하나여야 해요.' });
+  if (!['shadowing', 'dictation', 'pattern', 'scramble', 'vocab'].includes(type)) {
+    return res.status(400).json({ error: 'type은 shadowing, dictation, pattern, scramble, vocab 중 하나여야 해요.' });
   }
   if (!Number.isInteger(level) || level < 1 || level > 7) {
     return res.status(400).json({ error: 'level은 1~7 사이 숫자여야 해요.' });
