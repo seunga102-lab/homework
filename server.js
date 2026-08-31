@@ -240,17 +240,17 @@ ${slangPatternRules}
 레벨: ${meta.name} (${meta.cefr})
 학습 목표: ${meta.goal}
 난이도 참고 예문: "${meta.example}"
-${meta.vocab ? "사용 어휘 제한: " + meta.vocab : ""}
 ${slangVocabRules}
 
 규칙:
-- 이 레벨 수준의 학생이 배우기 적절한 단어/표현 6개를 선정할 것 (${meta.cefr} 수준)
+- 이 레벨(${meta.cefr}) 학생에게 "새롭게 배울 가치가 있는" 단어/표현 6개를 선정할 것
+- happy, busy, go, like, want, good, nice처럼 이미 아주 흔하고 기초적인 단어는 피하고, 같은 레벨 안에서도 조금 더 특징적이고 실용적인 어휘를 우선할 것 (그 레벨 CEFR 밴드의 중간~상위 난이도를 목표로 할 것)
 - 6개는 서로 다른 주제/품사를 다뤄서 다양하게 만들 것
 - 각 단어마다 그 단어가 자연스럽게 쓰인 예문을 만들 것 (예문 길이는 ${meta.length} 범위를 크게 벗어나지 않게)
 - 저작권 있는 대사를 베끼지 말고 새로 창작할 것
 - 반드시 순수 JSON 배열 6개 항목만 응답하고 다른 설명은 절대 포함하지 마라.
 형식: [{"word":"영어 단어/표현","meaning":"한글 뜻","example_en":"예문 영어","example_ko":"예문 한글 뜻"}, ...]`;
-    const raw = await callAnthropicRaw(sys, `${meta.name} 수준(${meta.cefr})에 정확히 맞는 새로운 단어 6개를 만들어줘.`);
+    const raw = await callAnthropicRaw(sys, `${meta.name} 수준(${meta.cefr})에서 학생들이 새롭게 배울 만한, 조금 더 도전적인 단어 6개를 만들어줘.`);
     const parsed = safeJsonParseServer(raw);
     if (!Array.isArray(parsed) || parsed.length < 4) throw new Error('AI 응답 형식이 올바르지 않습니다.');
     return parsed.slice(0, 6).map((p) => ({
