@@ -306,7 +306,7 @@
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <span style="font-weight:700; font-size:14px;">오늘의 학습 진행률</span>
-          <span id="today-progress-text" style="font-size:13px; color:var(--ink-soft); font-weight:600;">0/4 완료</span>
+          <span id="today-progress-text" style="font-size:13px; color:var(--ink-soft); font-weight:600;">0/5 완료</span>
         </div>
         <div class="xp-bar-track"><div class="xp-bar-fill" id="today-progress-bar" style="width:0%"></div></div>
       </div>
@@ -359,6 +359,16 @@
           <p class="mission-sub">단어 순서 맞추기 · 약 5분</p>
         </div>
         <span class="mission-badge" data-mission-type="scramble" style="display:none;">✓ 완료</span>
+        <div class="chev">›</div>
+      </div>
+
+      <div class="mission-card card" onclick="go('vocab')">
+        <div class="mission-icon" style="background:#E3EEFB;">📚</div>
+        <div>
+          <p class="mission-title">오늘의 단어</p>
+          <p class="mission-sub">단어 6개 · 플래시카드 + 퀴즈 · 약 5분</p>
+        </div>
+        <span class="mission-badge" data-mission-type="vocab" style="display:none;">✓ 완료</span>
         <div class="chev">›</div>
       </div>
 
@@ -543,6 +553,43 @@
     <div id="scramble-result" style="display:none; margin-top:16px;"></div>
   </div>
 
+  <!-- ============ VOCAB (오늘의 단어) ============ -->
+  <div class="screen" id="screen-vocab">
+    <button class="back-btn" onclick="go('home')">‹ 홈으로</button>
+    <h2 style="margin:0 0 4px;">오늘의 단어</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <p style="color:var(--ink-soft); font-size:13.5px; margin:0;" id="vocab-phase-label">단어와 뜻, 예문을 익혀보세요.</p>
+      <span class="pill" id="vocab-progress-pill" style="flex-shrink:0; margin-left:8px;">1/6</span>
+    </div>
+
+    <!-- 플래시카드 단계 -->
+    <div id="vocab-flashcard-view">
+      <div class="sentence-box" style="text-align:center; padding:28px 20px;">
+        <div class="sentence-en" id="vocab-word" style="font-size:24px;"></div>
+        <div style="font-size:16px; font-weight:700; color:var(--teal-dark); margin-top:6px;" id="vocab-meaning"></div>
+        <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+          <div style="font-size:14px;" id="vocab-example-en"></div>
+          <div style="font-size:12.5px; color:var(--ink-soft); margin-top:4px;" id="vocab-example-ko"></div>
+        </div>
+      </div>
+      <button class="play-btn" onclick="playVocabWord()">▶</button>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="prevVocabFlashcard()">‹ 이전</button>
+        <button class="btn btn-primary" id="vocab-next-btn" onclick="nextVocabFlashcard()">다음 →</button>
+      </div>
+    </div>
+
+    <!-- 퀴즈 단계 -->
+    <div id="vocab-quiz-view" style="display:none;">
+      <div class="sentence-box" style="text-align:center; padding:28px 20px;">
+        <div style="font-size:13.5px; color:var(--ink-soft);">이 단어의 뜻은 무엇일까요?</div>
+        <div class="sentence-en" id="vocab-quiz-word" style="font-size:24px; margin-top:8px;"></div>
+      </div>
+      <div id="vocab-quiz-options" style="display:flex; flex-direction:column; gap:10px;"></div>
+      <div id="vocab-quiz-result" style="display:none; margin-top:16px;"></div>
+    </div>
+  </div>
+
   <!-- ============ STUDY (학습 목록) ============ -->
   <div class="screen" id="screen-study">
     <h2 style="margin:0 0 4px;">학습</h2>
@@ -585,6 +632,16 @@
         <p class="mission-sub">단어 순서 맞추기 · 약 5분</p>
       </div>
       <span class="mission-badge" data-mission-type="scramble" style="display:none;">✓ 완료</span>
+      <div class="chev">›</div>
+    </div>
+
+    <div class="mission-card card" onclick="go('vocab')">
+      <div class="mission-icon" style="background:#E3EEFB;">📚</div>
+      <div>
+        <p class="mission-title">오늘의 단어</p>
+        <p class="mission-sub">단어 6개 · 플래시카드 + 퀴즈 · 약 5분</p>
+      </div>
+      <span class="mission-badge" data-mission-type="vocab" style="display:none;">✓ 완료</span>
       <div class="chev">›</div>
     </div>
   </div>
@@ -703,7 +760,7 @@
 let authToken = null;
 // 학생용 일반 링크에는 선생님 가입 옵션이 안 보이고, ?teacher=1 이 붙은 특별한 링크에서만 보인다.
 const showTeacherOption = new URLSearchParams(window.location.search).get('teacher') === '1';
-let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, scramble:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3, dayCount:1, username:'', role:'student' };
+let state = { xp:0, streak:0, level:3, levelChosen:false, completed:{shadowing:false, dictation:false, pattern:false, scramble:false, vocab:false}, usage:{shadowing:0, dictation:0}, dailyLimit:3, dayCount:1, username:'', role:'student' };
 let authMode = 'login';
 
 function switchAuthTab(mode){
@@ -828,6 +885,7 @@ async function enterHome(){
   await prepareDictSentence();
   await initPattern();
   await initScramble();
+  await initVocab();
   updateUsagePills();
 }
 
@@ -926,8 +984,8 @@ function renderHomeStats(){
   document.getElementById('xp-count').textContent = state.xp;
   document.getElementById('day-count-display').textContent = (state.dayCount||1).toLocaleString('ko-KR') + '일차';
   const doneCount = Object.values(state.completed).filter(Boolean).length;
-  document.getElementById('today-progress-text').textContent = doneCount + '/4 완료';
-  document.getElementById('today-progress-bar').style.width = (doneCount/4*100) + '%';
+  document.getElementById('today-progress-text').textContent = doneCount + '/5 완료';
+  document.getElementById('today-progress-bar').style.width = (doneCount/5*100) + '%';
 
   document.querySelectorAll('.mission-badge[data-mission-type]').forEach(badge=>{
     const type = badge.dataset.missionType;
@@ -1008,27 +1066,37 @@ const FALLBACK_LOCAL = {
     {en:"I usually go to work by bus.",ko:"나는 보통 버스로 출근한다."},
     {en:"She likes to read books at night.",ko:"그녀는 밤에 책 읽는 것을 좋아한다."},
     {en:"We are planning a trip next month.",ko:"우리는 다음 달에 여행을 계획하고 있다."}
+  ],
+  vocab: [
+    {word:"happy",meaning:"행복한",example_en:"I am happy today.",example_ko:"나는 오늘 행복하다."},
+    {word:"busy",meaning:"바쁜",example_en:"She is busy this week.",example_ko:"그녀는 이번 주에 바쁘다."},
+    {word:"decide",meaning:"결정하다",example_en:"I haven't decided yet.",example_ko:"나는 아직 결정하지 않았어."},
+    {word:"improve",meaning:"개선하다, 나아지다",example_en:"I want to improve my English.",example_ko:"나는 내 영어를 개선하고 싶어."},
+    {word:"usually",meaning:"보통, 대개",example_en:"I usually wake up at seven.",example_ko:"나는 보통 7시에 일어난다."},
+    {word:"closer look",meaning:"더 자세히 살펴봄",example_en:"This warrants a closer look.",example_ko:"이건 더 자세히 살펴볼 필요가 있어."}
   ]
 };
 
 async function ensureTodayContent(){
   if(todayContent.level === state.level && todayContent.day === state.dayCount &&
-     todayContent.shadowing && todayContent.dictation && todayContent.pattern && todayContent.scramble){
+     todayContent.shadowing && todayContent.dictation && todayContent.pattern && todayContent.scramble && todayContent.vocab){
     return; // 이미 이 레벨/날짜에 대해 로드됨
   }
-  todayContent = { shadowing:null, dictation:null, pattern:null, scramble:null, level:state.level, day:state.dayCount };
+  todayContent = { shadowing:null, dictation:null, pattern:null, scramble:null, vocab:null, level:state.level, day:state.dayCount };
   try{
-    const [sRes, dRes, pRes, scRes] = await Promise.all([
+    const [sRes, dRes, pRes, scRes, vRes] = await Promise.all([
       authFetch(`/api/content/shadowing/${state.level}`),
       authFetch(`/api/content/dictation/${state.level}`),
       authFetch(`/api/content/pattern/${state.level}`),
-      authFetch(`/api/content/scramble/${state.level}`)
+      authFetch(`/api/content/scramble/${state.level}`),
+      authFetch(`/api/content/vocab/${state.level}`)
     ]);
-    const [sData, dData, pData, scData] = await Promise.all([sRes.json(), dRes.json(), pRes.json(), scRes.json()]);
+    const [sData, dData, pData, scData, vData] = await Promise.all([sRes.json(), dRes.json(), pRes.json(), scRes.json(), vRes.json()]);
     todayContent.shadowing = sData.content;
     todayContent.dictation = dData.content;
     todayContent.pattern = pData.content;
     todayContent.scramble = scData.content;
+    todayContent.vocab = vData.content;
   }catch(e){
     console.error('오늘의 콘텐츠 로딩 오류:', e);
     showToast('오늘의 학습 문장을 불러오는 중 오류가 발생했어요');
@@ -1068,7 +1136,7 @@ function go(screen){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+screen).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  const navMap = {home:'home', study:'study', shadowing:'study', dictation:'study', pattern:'study', scramble:'study', report:'report', mypage:'me'};
+  const navMap = {home:'home', study:'study', shadowing:'study', dictation:'study', pattern:'study', scramble:'study', vocab:'study', report:'report', mypage:'me'};
   const navEl = document.querySelector('[data-nav="'+(navMap[screen]||'home')+'"]');
   if(navEl) navEl.classList.add('active');
   document.querySelector('.bottom-nav').style.display = (screen==='login' || screen==='level-select' || screen==='teacher-dashboard' || screen==='student-detail') ? 'none' : 'flex';
@@ -1098,10 +1166,10 @@ function renderReport(){
   document.getElementById('report-usage-shadow').textContent = (state.usage.shadowing||0) + '/' + state.dailyLimit;
   document.getElementById('report-usage-dict').textContent = (state.usage.dictation||0) + '/' + state.dailyLimit;
 
-  const missionLabels = { shadowing:'🗣️ 쉐도잉', dictation:'✍️ 딕테이션', pattern:'💬 원어민 패턴 학습', scramble:'🧩 문장 재구성' };
+  const missionLabels = { shadowing:'🗣️ 쉐도잉', dictation:'✍️ 딕테이션', pattern:'💬 원어민 패턴 학습', scramble:'🧩 문장 재구성', vocab:'📚 오늘의 단어' };
   const listHtml = Object.keys(missionLabels).map(type=>{
     const done = state.completed[type];
-    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; ${type!=='scramble' ? 'border-bottom:1px solid var(--line);' : ''}">
+    return `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; ${type!=='vocab' ? 'border-bottom:1px solid var(--line);' : ''}">
       <span style="font-size:13.5px;">${missionLabels[type]}</span>
       <span style="font-weight:700; font-size:13px; color:${done ? 'var(--success)' : 'var(--ink-soft)'};">${done ? '✓ 완료' : '미완료'}</span>
     </div>`;
@@ -1142,7 +1210,7 @@ function renderTeacherStudentList(students){
     document.getElementById('teacher-student-list').innerHTML = '<div class="card" style="text-align:center; color:var(--ink-soft); font-size:13.5px;">아직 가입한 학생이 없어요.</div>';
     return;
   }
-  const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', scramble:'🧩' };
+  const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', scramble:'🧩', vocab:'📚' };
   const html = students.map(s=>{
     const doneCount = Object.values(s.completed).filter(Boolean).length;
     const statusDot = !s.active ? '⛔' : doneCount >= 3 ? '🟢' : doneCount >= 1 ? '🟡' : '🔴';
@@ -1157,7 +1225,7 @@ function renderTeacherStudentList(students){
         <span style="font-weight:700; font-size:14.5px;">${statusDot} ${displayName}${suspendedBadge}</span>
         <span style="font-size:12px; color:var(--ink-soft); font-weight:600;">Lv.${s.level} · ${s.dayCount.toLocaleString('ko-KR')}일차</span>
       </div>
-      <div style="margin-top:8px;">${missionRow}<span style="font-size:12px; color:var(--ink-soft); margin-left:4px;">${doneCount}/4 완료</span></div>
+      <div style="margin-top:8px;">${missionRow}<span style="font-size:12px; color:var(--ink-soft); margin-left:4px;">${doneCount}/5 완료</span></div>
       <div style="display:flex; gap:14px; margin-top:10px; font-size:12.5px; color:var(--ink-soft);">
         <span>🔥 ${s.streak}일 연속</span>
         <span>⭐ ${s.xp} XP</span>
@@ -1232,7 +1300,7 @@ async function deleteStudent(){
 }
 
 function renderStudentDetail(s, history){
-  const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', scramble:'🧩' };
+  const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', scramble:'🧩', vocab:'📚' };
   const doneCount = Object.values(s.completed).filter(Boolean).length;
   document.getElementById('student-detail-name').textContent = s.name ? `${s.name} (${s.username})` : `${s.username} 학생`;
   document.getElementById('student-detail-summary').innerHTML = `
@@ -1243,7 +1311,7 @@ function renderStudentDetail(s, history){
     <div style="display:flex; gap:14px; font-size:12.5px; color:var(--ink-soft);">
       <span>🔥 ${s.streak}일 연속</span>
       <span>⭐ ${s.xp} XP</span>
-      <span>오늘 ${doneCount}/4 완료</span>
+      <span>오늘 ${doneCount}/5 완료</span>
     </div>
   `;
 
@@ -1254,7 +1322,7 @@ function renderStudentDetail(s, history){
 
   const html = history.map(h=>{
     const icon = missionIcons[h.type] || '📝';
-    const typeLabel = { shadowing:'쉐도잉', dictation:'딕테이션', pattern:'패턴학습', scramble:'문장 재구성' }[h.type] || h.type;
+    const typeLabel = { shadowing:'쉐도잉', dictation:'딕테이션', pattern:'패턴학습', scramble:'문장 재구성', vocab:'오늘의 단어' }[h.type] || h.type;
     const scoreHtml = (h.score !== null && h.score !== undefined) ? `<span class="tag" style="margin-left:6px;">${h.score}점</span>` : '';
     return `
     <div class="card">
@@ -1979,6 +2047,7 @@ async function selectLevel(n){
   await prepareDictSentence();
   await initPattern();
   await initScramble();
+  await initVocab();
   showToast(currentLevelData().name + ' 콘텐츠로 전환했어요');
 }
 
@@ -2729,6 +2798,131 @@ async function nextScrambleRound(){
   } else {
     await completeMission('scramble');
   }
+}
+
+/* ================= VOCAB (오늘의 단어) ================= */
+let vocabList = [];
+let vocabFlashIndex = 0;
+let vocabQuizQuestions = [];
+let vocabQuizIndex = 0;
+let vocabQuizScore = 0;
+let vocabQuizAnswered = false;
+
+async function initVocab(){
+  document.getElementById('vocab-progress-pill').textContent = '로딩...';
+  await ensureTodayContent();
+  vocabList = todayContent.vocab || FALLBACK_LOCAL.vocab;
+  vocabFlashIndex = 0;
+  document.getElementById('vocab-phase-label').textContent = '단어와 뜻, 예문을 익혀보세요.';
+  document.getElementById('vocab-flashcard-view').style.display = 'block';
+  document.getElementById('vocab-quiz-view').style.display = 'none';
+  renderVocabFlashcard();
+}
+
+function renderVocabFlashcard(){
+  const item = vocabList[vocabFlashIndex];
+  document.getElementById('vocab-progress-pill').textContent = (vocabFlashIndex+1) + '/' + vocabList.length;
+  document.getElementById('vocab-word').textContent = item.word;
+  document.getElementById('vocab-meaning').textContent = item.meaning;
+  document.getElementById('vocab-example-en').textContent = item.example_en;
+  document.getElementById('vocab-example-ko').textContent = item.example_ko;
+  document.getElementById('vocab-next-btn').textContent = (vocabFlashIndex < vocabList.length-1) ? '다음 →' : '퀴즈 시작하기 →';
+}
+function playVocabWord(){
+  const item = vocabList[vocabFlashIndex];
+  speakText(item.word, 0.9);
+}
+function prevVocabFlashcard(){
+  if(vocabFlashIndex > 0){
+    vocabFlashIndex--;
+    renderVocabFlashcard();
+  }
+}
+function nextVocabFlashcard(){
+  if(vocabFlashIndex < vocabList.length-1){
+    vocabFlashIndex++;
+    renderVocabFlashcard();
+  } else {
+    startVocabQuiz();
+  }
+}
+
+function shuffleArray(arr){
+  return arr.map(v=>({v, r:Math.random()})).sort((a,b)=>a.r-b.r).map(x=>x.v);
+}
+
+function startVocabQuiz(){
+  document.getElementById('vocab-phase-label').textContent = '배운 단어를 퀴즈로 확인해보세요.';
+  document.getElementById('vocab-flashcard-view').style.display = 'none';
+  document.getElementById('vocab-quiz-view').style.display = 'block';
+
+  vocabQuizQuestions = vocabList.map((item, idx)=>{
+    const otherMeanings = vocabList.filter((_,i)=>i!==idx).map(v=>v.meaning);
+    const distractors = shuffleArray(otherMeanings).slice(0, 3);
+    const options = shuffleArray([item.meaning, ...distractors]);
+    return { word:item.word, correct:item.meaning, options };
+  });
+  vocabQuizIndex = 0;
+  vocabQuizScore = 0;
+  renderVocabQuizQuestion();
+}
+
+function renderVocabQuizQuestion(){
+  const q = vocabQuizQuestions[vocabQuizIndex];
+  vocabQuizAnswered = false;
+  document.getElementById('vocab-progress-pill').textContent = (vocabQuizIndex+1) + '/' + vocabQuizQuestions.length;
+  document.getElementById('vocab-quiz-word').textContent = q.word;
+  document.getElementById('vocab-quiz-result').style.display = 'none';
+  document.getElementById('vocab-quiz-result').innerHTML = '';
+  document.getElementById('vocab-quiz-options').innerHTML = q.options.map((opt, idx)=>
+    `<button class="btn btn-secondary" style="text-align:left;" onclick="selectVocabQuizAnswer(${idx})" id="vocab-opt-${idx}">${escapeHtml(opt)}</button>`
+  ).join('');
+}
+
+function selectVocabQuizAnswer(idx){
+  if(vocabQuizAnswered) return;
+  vocabQuizAnswered = true;
+  const q = vocabQuizQuestions[vocabQuizIndex];
+  const chosen = q.options[idx];
+  const isCorrect = chosen === q.correct;
+  if(isCorrect) vocabQuizScore++;
+
+  q.options.forEach((opt, i)=>{
+    const btn = document.getElementById('vocab-opt-'+i);
+    if(opt === q.correct) btn.style.background = 'var(--success-bg)';
+    else if(i === idx) btn.style.background = 'var(--error-bg)';
+  });
+
+  document.getElementById('vocab-quiz-result').innerHTML = `
+    <div class="card">
+      <div class="feedback-block" style="border-left-color:${isCorrect ? 'var(--success)' : 'var(--error)'};">
+        <div class="feedback-title" style="color:${isCorrect ? 'var(--success)' : 'var(--error)'};">${isCorrect ? '🎉 정답이에요!' : '아쉬워요'}</div>
+        <div style="font-size:14px; margin-top:4px;">${escapeHtml(q.word)} = ${escapeHtml(q.correct)}</div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:10px;" onclick="nextVocabQuizQuestion()">${vocabQuizIndex < vocabQuizQuestions.length-1 ? '다음 문제 →' : '결과 보기 →'}</button>
+    </div>`;
+  document.getElementById('vocab-quiz-result').style.display = 'block';
+}
+
+async function nextVocabQuizQuestion(){
+  if(vocabQuizIndex < vocabQuizQuestions.length-1){
+    vocabQuizIndex++;
+    renderVocabQuizQuestion();
+  } else {
+    await finishVocabQuiz();
+  }
+}
+
+async function finishVocabQuiz(){
+  logHistory('vocab', vocabList.map(v=>v.word).join(', '), `퀴즈 ${vocabQuizScore}/${vocabQuizQuestions.length}점`, Math.round(vocabQuizScore/vocabQuizQuestions.length*100));
+  document.getElementById('vocab-quiz-options').innerHTML = '';
+  document.getElementById('vocab-quiz-result').innerHTML = `
+    <div class="card" style="text-align:center;">
+      <div style="font-size:36px; margin-bottom:8px;">${vocabQuizScore === vocabQuizQuestions.length ? '🏆' : '👍'}</div>
+      <div style="font-weight:700; font-size:16px;">${vocabQuizScore} / ${vocabQuizQuestions.length}개 정답!</div>
+      <button class="btn btn-primary" style="margin-top:14px;" onclick="completeMission('vocab')">완료하고 홈으로</button>
+    </div>`;
+  document.getElementById('vocab-quiz-result').style.display = 'block';
 }
 
 /* ================= INIT ================= */
