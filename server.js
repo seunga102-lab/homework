@@ -124,7 +124,8 @@ async function callAnthropicRaw(systemPrompt, userPrompt) {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 1000,
+      max_tokens: 1500,
+      temperature: 1,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }]
     })
@@ -157,8 +158,22 @@ function safeJsonParseServer(raw) {
   }
 }
 
-async function generateDailyContent(type, level) {
+const THEMES = ['음식·요리','여행·교통','직장·업무','학교·공부','건강·운동','쇼핑·가격','날씨·계절','가족·친구','취미·여가','영화·음악','기술·스마트폰','집·이사','감정·기분','약속·일정','병원·약국','카페·식당 주문','길 찾기','SNS·인터넷','돈·저축','반려동물','자연·환경','스포츠','뉴스·사회','꿈·목표','추억·과거 경험','불평·부탁·사과','칭찬·감사','전화·메시지','패션·외모','파티·모임'];
+function pickThemes(n) {
+  const a = THEMES.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a.slice(0, n);
+}
+function normText(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+function avoidBlock(used, extra) {
+  const list = used.slice(0, 80).map((u) => '- ' + u).join('\n');
+  return (list ? `\n\n[절대 재사용 금지] 아래는 최근 이미 출제된 표현이다. 이것과 같거나 거의 같은 문장/단어/시작 표현은 만들지 말 것:\n${list}` : '') + (extra || '');
+}
+
+async function generateDailyContent(type, level, used = []) {
   const meta = LEVEL_META[level];
+  const themes = pickThemes(type === 'vocab' ? 6 : 3);
+  const themeLine = `\n\n[오늘의 주제 힌트] 각 항목을 순서대로 다음 주제로 만들 것: ${themes.join(' / ')}`;
   if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY 미설정');
 
   if (type === 'shadowing' || type === 'dictation' || type === 'scramble') {
@@ -193,7 +208,7 @@ ${slangRules}
 - 저작권 있는 특정 영화/드라마/노래 대사를 그대로 베끼지 말 것 (원본 문장을 새로 창작)
 - 반드시 순수 JSON 배열만 응답하고 다른 설명은 절대 포함하지 마라.
 형식: [{"en":"영어 문장","ko":"한글 뜻"},{"en":"...","ko":"..."},{"en":"...","ko":"..."}]`;
-    const raw = await callAnthropicRaw(sys, `${meta.name} 수준(${meta.length}, ${meta.grammar})에 정확히 맞는 새로운 문장 3개를 만들어줘.`);
+    const raw = await callAnthropicRaw(sys + avoidBlock(used, themeLine), `${meta.name} 수준(${meta.length}, ${meta.grammar})에 정확히 맞는 새로운 문장 3개를 만들어줘.`);
     const parsed = safeJsonParseServer(raw);
     if (!Array.isArray(parsed) || parsed.length < 3) throw new Error('AI 응답 형식이 올바르지 않습니다.');
     return parsed.slice(0, 3).map((p) => ({ en: String(p.en || '').trim(), ko: String(p.ko || '').trim() }));
@@ -224,7 +239,7 @@ ${slangPatternRules}
 - 저작권 있는 대사를 베끼지 말고 새로 창작할 것
 - 반드시 순수 JSON 배열 3개 항목만 응답하고 다른 설명은 절대 포함하지 마라.
 형식: [{"en":"STEP1 영어","ko":"STEP1 한글 뜻"},{"en":"STEP2 영어","ko":"STEP2 한글 뜻"},{"en":"STEP3 영어","ko":"STEP3 한글 뜻"}]`;
-    const raw = await callAnthropicRaw(sys, `${meta.name} 수준(${meta.length}, ${meta.grammar})에 정확히 맞는 새로운 패턴 세트를 만들어줘.`);
+    const raw = await callAnthropicRaw(sys + avoidBlock(used, '\n\n[오늘의 주제 힌트] ' + themes[0] + ' 관련 패턴. STEP1 시작 표현(예: "I\'m the one who")도 위 목록과 다른 것으로 고를 것.'), `${meta.name} 수준(${meta.length}, ${meta.grammar})에 정확히 맞는 새로운 패턴 세트를 만들어줘.`);
     const parsed = safeJsonParseServer(raw);
     if (!Array.isArray(parsed) || parsed.length < 3) throw new Error('AI 응답 형식이 올바르지 않습니다.');
     return parsed.slice(0, 3).map((p) => ({ en: String(p.en || '').trim(), ko: String(p.ko || '').trim() }));
@@ -250,7 +265,7 @@ ${slangVocabRules}
 - 저작권 있는 대사를 베끼지 말고 새로 창작할 것
 - 반드시 순수 JSON 배열 6개 항목만 응답하고 다른 설명은 절대 포함하지 마라.
 형식: [{"word":"영어 단어/표현","meaning":"한글 뜻","example_en":"예문 영어","example_ko":"예문 한글 뜻"}, ...]`;
-    const raw = await callAnthropicRaw(sys, `${meta.name} 수준(${meta.cefr})에서 학생들이 새롭게 배울 만한, 조금 더 도전적인 단어 6개를 만들어줘.`);
+    const raw = await callAnthropicRaw(sys + avoidBlock(used, themeLine), `${meta.name} 수준(${meta.cefr})에서 학생들이 새롭게 배울 만한, 조금 더 도전적인 단어 6개를 만들어줘.`);
     const parsed = safeJsonParseServer(raw);
     if (!Array.isArray(parsed) || parsed.length < 4) throw new Error('AI 응답 형식이 올바르지 않습니다.');
     return parsed.slice(0, 6).map((p) => ({
@@ -264,19 +279,77 @@ ${slangVocabRules}
   throw new Error('알 수 없는 type: ' + type);
 }
 
-// 오늘/이 레벨/이 타입의 콘텐츠를 가져온다. 캐시에 있으면 재사용하고, 없으면 AI로 새로 생성해 캐시에 저장한다.
+// 같은 type/level의 최근 출제 이력을 모아 (비교용 키 목록, 프롬프트용 원문 목록)으로 돌려준다.
+async function getUsedHistory(type, level) {
+  const r = await pool.query(
+    "SELECT content FROM daily_content WHERE content_key LIKE $1 ORDER BY created_at DESC LIMIT 120",
+    [`${type}:${level}:%`]
+  );
+  const raw = [];
+  for (const row of r.rows) {
+    const c = Array.isArray(row.content) ? row.content : [];
+    if (type === 'vocab') c.forEach((x) => x && x.word && raw.push(x.word));
+    else if (type === 'pattern') c.forEach((x) => x && x.en && raw.push(x.en));
+    else c.forEach((x) => x && x.en && raw.push(x.en));
+  }
+  return raw;
+}
+function findDuplicates(type, content, used) {
+  const usedSet = new Set(used.map(normText));
+  // 패턴은 STEP1(시작 표현) 앞 3단어가 같아도 중복으로 본다
+  const usedStarts = type === 'pattern' ? new Set(used.map((u) => normText(u).split(' ').slice(0, 3).join(' '))) : null;
+  const dups = [];
+  const seenInside = new Set();
+  content.forEach((x, idx) => {
+    const key = normText(type === 'vocab' ? x.word : x.en);
+    if (!key) { dups.push(idx); return; }
+    if (usedSet.has(key) || seenInside.has(key)) dups.push(idx);
+    else if (usedStarts && idx === 0 && usedStarts.has(key.split(' ').slice(0, 3).join(' '))) dups.push(idx);
+    seenInside.add(key);
+  });
+  return dups;
+}
+
+const inflight = new Map();      // 같은 키 동시 생성 방지
+const failCooldown = new Map();  // AI 실패 시 잠깐 재시도 억제
+
+async function createFreshContent(type, level, key) {
+  let used = [];
+  try { used = await getUsedHistory(type, level); } catch (e) { console.error('이력 조회 오류:', e.message); }
+  let best = null, bestDups = Infinity;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const content = await generateDailyContent(type, level, used);
+    const dups = findDuplicates(type, content, used);
+    if (dups.length < bestDups) { best = content; bestDups = dups.length; }
+    if (dups.length === 0) break;
+    console.warn(`중복 감지 (${key}) 시도 ${attempt}/3, 중복 항목:`, dups.join(','));
+    used = used.concat(dups.map((k) => (type === 'vocab' ? content[k].word : content[k].en)));
+  }
+  return best; // 3회 후에도 중복이 남으면 중복이 가장 적은 결과 사용
+}
+
+// 오늘/이 레벨/이 타입의 콘텐츠를 가져온다. 캐시에 있으면 재사용하고, 없으면 최근 출제 이력을 피해 AI로 새로 생성해 저장한다.
 // 같은 날 같은 레벨의 모든 학생이 동일한 콘텐츠를 공유하므로 AI 호출은 레벨당/타입당 하루 1회만 발생한다.
 async function getOrCreateDailyContent(type, level) {
   const key = `${type}:${level}:${todayKST()}`;
   const existing = await pool.query('SELECT content FROM daily_content WHERE content_key = $1', [key]);
   if (existing.rows[0]) return existing.rows[0].content;
 
+  // 최근 실패했다면 잠시 폴백 반환 (저장하지 않음)
+  const cd = failCooldown.get(key);
+  if (cd && Date.now() < cd) return FALLBACK_CONTENT[type];
+
+  if (!inflight.has(key)) {
+    inflight.set(key, createFreshContent(type, level, key).finally(() => inflight.delete(key)));
+  }
   let content;
   try {
-    content = await generateDailyContent(type, level);
+    content = await inflight.get(key);
   } catch (e) {
     console.error(`일일 콘텐츠 생성 실패 (${key}):`, e.message);
-    content = FALLBACK_CONTENT[type];
+    // 폴백은 DB에 저장하지 않는다 → 다음 시도(2분 후)에 AI로 다시 새 콘텐츠를 만든다
+    failCooldown.set(key, Date.now() + 2 * 60 * 1000);
+    return FALLBACK_CONTENT[type];
   }
 
   try {
@@ -287,7 +360,6 @@ async function getOrCreateDailyContent(type, level) {
   } catch (e) {
     console.error('일일 콘텐츠 저장 오류:', e);
   }
-  // 동시에 여러 요청이 처음 생성을 시도했을 수 있으므로, 최종적으로 저장된(먼저 저장된) 버전을 다시 읽어 일관성 유지
   const final = await pool.query('SELECT content FROM daily_content WHERE content_key = $1', [key]);
   return final.rows[0] ? final.rows[0].content : content;
 }
