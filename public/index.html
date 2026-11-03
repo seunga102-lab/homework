@@ -1315,26 +1315,57 @@ function renderStudentDetail(s, history){
     </div>
   `;
 
+  window._detailHistory = history;
+  const dates = [...new Set(history.map(x => x.date).filter(Boolean))].sort().reverse();
+  window._detailDate = dates[0] || null;
+  renderDetailHistory();
+}
+
+function selectDetailDate(d){
+  window._detailDate = d;
+  renderDetailHistory();
+}
+
+function renderDetailHistory(){
+  const history = window._detailHistory || [];
+  const box = document.getElementById('student-detail-history');
   if(history.length === 0){
-    document.getElementById('student-detail-history').innerHTML = '<div class="card" style="text-align:center; color:var(--ink-soft); font-size:13.5px;">아직 학습 기록이 없어요.</div>';
+    box.innerHTML = '<div class="card" style="text-align:center; color:var(--ink-soft); font-size:13.5px;">아직 학습 기록이 없어요.</div>';
     return;
   }
-
-  const html = history.map(h=>{
+  const missionIcons = { shadowing:'🗣️', dictation:'✍️', pattern:'💬', scramble:'🧩', vocab:'📚' };
+  const typeLabels = { shadowing:'쉐도잉', dictation:'딕테이션', pattern:'패턴학습', scramble:'문장 재구성', vocab:'오늘의 단어' };
+  const dates = [...new Set(history.map(x => x.date).filter(Boolean))].sort().reverse();
+  const sel = window._detailDate || dates[0];
+  const chips = dates.map(d => {
+    const n = history.filter(x => x.date === d).length;
+    const on = d === sel;
+    return `<button onclick="selectDetailDate('${d}')" style="flex:0 0 auto; padding:7px 12px; border-radius:999px; border:1px solid ${on ? 'var(--ink, #1a2238)' : 'var(--line, #ddd)'}; background:${on ? 'var(--ink, #1a2238)' : '#fff'}; color:${on ? '#fff' : 'inherit'}; font-size:12.5px; font-weight:600; cursor:pointer;">${escapeHtml(d.slice(5).replace('-','/'))} <span style="opacity:.7;">${n}</span></button>`;
+  }).join('');
+  const items = history.filter(x => x.date === sel).sort((a,b) => (a.at||0) - (b.at||0));
+  const counts = {};
+  items.forEach(x => { counts[x.type] = (counts[x.type]||0) + 1; });
+  const summary = Object.keys(counts).map(t => `${missionIcons[t]||'📝'} ${typeLabels[t]||escapeHtml(t)} ${counts[t]}`).join(' · ');
+  const list = items.map(h => {
     const icon = missionIcons[h.type] || '📝';
-    const typeLabel = { shadowing:'쉐도잉', dictation:'딕테이션', pattern:'패턴학습', scramble:'문장 재구성', vocab:'오늘의 단어' }[h.type] || h.type;
-    const scoreHtml = (h.score !== null && h.score !== undefined) ? `<span class="tag" style="margin-left:6px;">${h.score}점</span>` : '';
+    const typeLabel = typeLabels[h.type] || escapeHtml(h.type);
+    const scoreHtml = (h.score !== null && h.score !== undefined) ? `<span class="tag" style="margin-left:6px;">${Number(h.score)}점</span>` : '';
+    const time = h.at ? new Date(h.at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', timeZone:'Asia/Seoul'}) : '';
     return `
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <span style="font-weight:700; font-size:13.5px;">${icon} ${typeLabel}${scoreHtml}</span>
-        <span style="font-size:11.5px; color:var(--ink-soft);">${h.date || ''}</span>
+        <span style="font-size:11.5px; color:var(--ink-soft);">${time}</span>
       </div>
-      <div style="font-size:14px; font-weight:600; margin-top:6px;">${h.summary}</div>
-      ${h.detail ? `<div style="font-size:12.5px; color:var(--ink-soft); margin-top:4px;">${h.detail}</div>` : ''}
+      <div style="font-size:14px; font-weight:600; margin-top:6px;">${escapeHtml(h.summary)}</div>
+      ${h.detail ? `<div style="font-size:12.5px; color:var(--ink-soft); margin-top:4px;">${escapeHtml(h.detail)}</div>` : ''}
     </div>`;
   }).join('');
-  document.getElementById('student-detail-history').innerHTML = html;
+  box.innerHTML = `
+    <div style="font-size:12.5px; color:var(--ink-soft); margin:4px 0 6px;">날짜를 눌러 그날 학습 기록을 확인하세요</div>
+    <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; margin-bottom:6px;">${chips}</div>
+    <div style="font-weight:700; margin:6px 0;">${escapeHtml(sel || '')} 학습 <span style="font-weight:500; font-size:12.5px; color:var(--ink-soft);">${summary}</span></div>
+    ${list}`;
 }
 
 // 학생 이름 등 자유 입력 텍스트를 HTML에 안전하게 넣기 위한 이스케이프 처리
