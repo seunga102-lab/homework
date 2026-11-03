@@ -413,19 +413,22 @@ function defaultUserData(name) {
   };
 }
 // 날짜가 바뀌었으면 오늘 미션/사용량을 초기화한다. data 객체를 직접 수정(mutate)한다.
-// 진도(progressDay)는 "이전 활동일에 쉐도잉/딕테이션을 하루치(3+3) 다 끝냈는가"에 따라서만 넘어간다.
-// 못 끝냈으면 다음에 접속했을 때 같은 차수를 이어서 하도록 progressDay를 그대로 유지한다.
+// 진도(progressDay)는 "이전 활동일에 미션을 하나라도 했는가"에 따라 넘어간다.
+// 하나라도 했으면 다음 접속일에 다음 차수로 넘어가고, 아무것도 안 했으면 같은 차수를 그대로 유지한다.
 function rollUsageIfNeeded(data) {
   const today = todayKST();
   let changed = false;
   if (!data.usage || data.usage.date !== today) {
-    const finishedLastActiveDay = !!data.usage &&
-      data.usage.shadowing >= DAILY_LIMIT &&
-      data.usage.dictation >= DAILY_LIMIT;
-    if (finishedLastActiveDay) {
+    const c = data.completed || {};
+    const didAnything = !!data.usage && (
+      (data.usage.shadowing || 0) > 0 ||
+      (data.usage.dictation || 0) > 0 ||
+      Object.keys(c).some((k) => c[k] === true)
+    );
+    if (didAnything) {
       data.progressDay = (data.progressDay || 1) + 1;
     }
-    // 못 끝냈으면 progressDay는 그대로 두어, 이어서 같은 차수를 진행하게 한다.
+    // 아무 미션도 안 했으면 progressDay는 그대로 두어, 같은 차수를 이어서 진행하게 한다.
     data.usage = { date: today, shadowing: 0, dictation: 0 };
     data.completed = { shadowing: false, dictation: false, pattern: false, scramble: false, vocab: false };
     changed = true;
@@ -634,7 +637,7 @@ app.post('/api/me/progress', requireAuth, async (req, res) => {
   res.json({ user: sanitizeUser(req.username, req.userRow.role, data) });
 });
 
-const HISTORY_MAX_LENGTH = 100; // 학생당 최근 100개 활동만 보관 (너무 커지는 것 방지)
+const HISTORY_MAX_LENGTH = 1500; // 학생당 최근 1500개 활동 보관 (날짜별 조회용, 약 2~3개월치) (너무 커지는 것 방지)
 
 // 학습 활동 하나를 기록한다 (쉐도잉/딕테이션/패턴/일기 결과). 선생님이 학생 상세보기에서 확인할 수 있다.
 app.post('/api/me/history', requireAuth, async (req, res) => {
@@ -810,8 +813,13 @@ app.post('/api/ai', requireAuth, async (req, res) => {
         const parsed = JSON.parse(errText);
         detail = (parsed.error && parsed.error.message) || errText;
       } catch (_) { /* errText was not JSON, use as-is */ }
+      let friendly;
+      if (/credit balance|billing/i.test(detail)) friendly = 'AI 채점 서비스를 일시적으로 사용할 수 없어요. 선생님께 알려주세요. (서비스 이용 한도 문제로, 곧 복구될 예정이에요.)';
+      else if (response.status === 401 || response.status === 403) friendly = 'AI 서비스 인증에 문제가 있어요. 선생님께 알려주세요.';
+      else if (response.status === 429 || response.status === 529) friendly = '지금 AI 요청이 많아요. 잠시 후 "다시 시도"를 눌러주세요.';
+      console.error('AI 호출 실패 원인:', detail);
       return res.status(502).json({
-        error: `AI 서비스 호출에 실패했습니다 (HTTP ${response.status}): ${detail}`
+        error: friendly || `AI 서비스 호출에 실패했습니다 (HTTP ${response.status}): ${detail}`
       });
     }
 
